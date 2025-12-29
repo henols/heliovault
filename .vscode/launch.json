@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "VS64: Launch",
+      "type": "vs64",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/escape-room.prg",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "VICE: Launch",
+      "type": "vice",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/escape-room.prg",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

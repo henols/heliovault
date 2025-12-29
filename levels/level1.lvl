@@ -1,0 +1,314 @@
+; =========================
+; LEVEL 1: BOOT AUDIT
+; =========================
+
+LEVEL name="BOOT AUDIT" w=20 h=12 start=R0:S0
+
+TILES
+. 0
+# 1
+= 2
+H 3
+~ 4
+I 5
+M 6
+L 7
+V 8
+P 9
+T 10
+S 11
+E 12
+F 13
+B 14
+P 15
+END
+
+FLAGS
+LOCKER_L3_OPEN
+GOT_BADGE
+GOT_FUSE
+GOT_SCREWDRIVER
+GOT_LOG_TAPE_01
+RELAYS_OK
+FUSE_INSTALLED
+BADGE_SWIPED
+STATUS_GREEN
+END
+
+VARS
+RELAY_BITS
+END
+
+ITEMS
+BADGE_MAINT3
+FUSE_BLUE
+SCREWDRIVER
+LOG_TAPE_01
+CREDITS
+END
+
+MESSAGES
+WAKE_EVENT       = "WAKE EVENT. CONTAINMENT ACTIVE."
+ORACLE_WELCOME   = "WELCOME, CITIZEN. PLEASE COMPLETE BOOT AUDIT."
+MANIFEST_PIN     = "MANIFEST: BAY A / LOCKER L3  PIN: 7-2-9"
+LOCKER_OPENED    = "LOCKER: OPEN."
+LOCKER_BAD_CODE  = "LOCKER: BAD CODE."
+MIRA_HINT        = "MIRA: RELAYS 1&3 ON. 2 OFF."
+RELAY_SIGN       = "RELAY MAP: 1=ON 2=OFF 3=ON"
+PANEL_NO_POWER   = "HATCH: NO POWER."
+PANEL_POWER_OK   = "PANEL: POWER OK. INSERT FUSE."
+RELAYS_WRONG     = "STATUS: RED."
+RELAYS_RIGHT     = "STATUS: GREEN."
+FUSE_SEATED      = "FUSE SEATED."
+BADGE_OK         = "BADGE OK."
+MAGLOCK_RELEASED = "MAGLOCK: RELEASED."
+LOG_TAPE_FOUND   = "LOG TAPE FOUND."
+LOG_TAPE_TEXT    = "...ORACLE RUNS THE DRILL AGAIN. IT LIKES THIS VERSION."
+ZAP              = "ZAP! (LOW VOLTAGE)"
+END
+
+; ---------- Conditions ----------
+COND ALWAYS
+  TRUE
+END
+
+COND LOCKER_OPEN
+  FLAGSET LOCKER_L3_OPEN
+END
+
+COND RELAYS_OK
+  FLAGSET RELAYS_OK
+END
+
+COND EXIT_READY
+  FLAGSET RELAYS_OK
+  FLAGSET FUSE_INSTALLED
+  FLAGSET BADGE_SWIPED
+END
+
+; ---------- Actions ----------
+ACT SHOW_MANIFEST
+  MSG MANIFEST_PIN
+END
+
+ACT MIRA_TALK
+  MSG MIRA_HINT
+END
+
+ACT LOCKER_OK
+  SETFLAG LOCKER_L3_OPEN
+  MSG LOCKER_OPENED
+  SFX 1
+END
+
+ACT LOCKER_BAD
+  MSG LOCKER_BAD_CODE
+  SFX 2
+END
+
+ACT TAKE_BADGE
+  GIVE BADGE_MAINT3
+  SETFLAG GOT_BADGE
+  SFX 3
+END
+
+ACT TAKE_FUSE
+  GIVE FUSE_BLUE
+  SETFLAG GOT_FUSE
+  SFX 3
+END
+
+ACT TAKE_SCREW
+  GIVE SCREWDRIVER
+  SETFLAG GOT_SCREWDRIVER
+  SFX 3
+END
+
+ACT TAKE_TAPE
+  GIVE LOG_TAPE_01
+  SETFLAG GOT_LOG_TAPE_01
+  MSG LOG_TAPE_FOUND
+END
+
+ACT LOOK_TAPE
+  MSG LOG_TAPE_TEXT
+END
+
+ACT TAKE_CREDITS
+  GIVE CREDITS
+  SFX 3
+END
+
+ACT RELAY_OK
+  SETFLAG RELAYS_OK
+  SETFLAG STATUS_GREEN
+  MSG RELAYS_RIGHT
+  SFX 4
+END
+
+ACT RELAY_BAD
+  CLRFLAG RELAYS_OK
+  CLRFLAG STATUS_GREEN
+  MSG RELAYS_WRONG
+END
+
+ACT LOOK_HATCH_NOPOWER
+  MSG PANEL_NO_POWER
+END
+
+ACT LOOK_HATCH_POWER
+  MSG PANEL_POWER_OK
+END
+
+ACT INSERT_FUSE
+  SETFLAG FUSE_INSTALLED
+  MSG FUSE_SEATED
+  SFX 1
+END
+
+ACT SWIPE_BADGE
+  SETFLAG BADGE_SWIPED
+  MSG BADGE_OK
+  MSG MAGLOCK_RELEASED
+  SFX 1
+END
+
+ACT EXIT_TO_L2
+  TRANSITION R2 S0
+END
+
+
+; =========================
+; ROOM 0: Vestibule
+; =========================
+ROOM R2 name="xxx"
+
+SPAWNS
+  S0 2,7
+END
+MAP
+####################
+#I......M..L.......#
+#...............V..#
+#.................##
+#..................#
+#..................#
+#=======....=======#
+#P.................#
+#........H.........#
+#........H.....T...#
+#........H.........#
+####################
+END
+ENDROOM
+
+; =========================
+; ROOM 0: Vestibule
+; =========================
+ROOM R0 name="Vestibule"
+
+SPAWNS
+  S0 2,7
+  S1 18,7
+END
+
+EXITS
+  R R1:S0
+END
+
+OBJECTS
+  ; sign/clipboard clue
+  O1 at 3,2 type=SIGN verbs=LOOK look=SHOW_MANIFEST cond=ALWAYS
+
+  ; intercom
+  O2 at 1,1 type=NPC_INTERCOM verbs=TALK talk=MIRA_TALK cond=ALWAYS
+
+  ; locker keypad (UI): code=729, ok/bad scripts
+  O3 at 9,2 type=LOCKER_KEYPAD verbs=LOOK|OPERATE code=729 ok=LOCKER_OK bad=LOCKER_BAD cond=ALWAYS
+
+  ; pickups gated by LOCKER_OPEN
+  O4 at 9,3  type=PICKUP verbs=TAKE item=BADGE_MAINT3 take=TAKE_BADGE cond=LOCKER_OPEN
+  O5 at 10,3 type=PICKUP verbs=TAKE item=FUSE_BLUE    take=TAKE_FUSE  cond=LOCKER_OPEN
+  O6 at 11,3 type=PICKUP verbs=TAKE item=SCREWDRIVER  take=TAKE_SCREW  cond=LOCKER_OPEN
+
+  ; optional tape
+  O7 at 16,9 type=PICKUP verbs=TAKE|LOOK item=LOG_TAPE_01 take=TAKE_TAPE look=LOOK_TAPE cond=ALWAYS
+
+  ; optional credits
+  O8 at 11,4 type=PICKUP verbs=TAKE item=CREDITS take=TAKE_CREDITS cond=ALWAYS
+END
+
+MAP
+####################
+#I......M..L.......#
+#...............V..#
+#.................##
+#..................#
+#..................#
+#=======....=======#
+#P.................#
+#........H.........#
+#........H.....T...#
+#........H.........#
+####################
+END
+
+ENDROOM
+
+
+; =========================
+; ROOM 1: Relay Gallery
+; =========================
+ROOM R1 name="RelayGallery"
+
+SPAWNS
+  S0 1,7
+  S1 18,7
+END
+
+EXITS
+  L R0:S1
+END
+
+OBJECTS
+  ; relay sign
+  O1 at 2,1 type=SIGN verbs=LOOK look=SHOW_RELAY_SIGN cond=ALWAYS
+END
+
+; We reference a script that doesn't exist yet, so define it here:
+ACT SHOW_RELAY_SIGN
+  MSG RELAY_SIGN
+END
+
+OBJECTS
+  ; breaker (UI): writes VAR RELAY_BITS, evaluates ok/bad scripts
+  O2 at 3,5 type=BREAKER_PANEL verbs=OPERATE var=RELAY_BITS ok=RELAY_OK bad=RELAY_BAD cond=ALWAYS
+
+  ; hatch panel look: two objects same spot with different conds (data-driven LOOK)
+  O3 at 16,2 type=HATCH_PANEL verbs=LOOK|USE look=LOOK_HATCH_NOPOWER cond=ALWAYS
+  O4 at 16,2 type=HATCH_PANEL verbs=LOOK|USE look=LOOK_HATCH_POWER   cond=RELAYS_OK
+
+  ; hatch panel USE: keep it type-handled in engine OR use scripts
+  ; Here we store scripts to run when correct item is used (engine routes by item)
+  O5 at 16,2 type=HATCH_PANEL verbs=USE p0=0 p1=0 use=NOOP cond=RELAYS_OK
+
+  ; exit hatch (transition)
+  O6 at 16,1 type=EXIT_TRIGGER verbs=OPERATE operate=EXIT_TO_L2 cond=EXIT_READY
+END
+
+MAP
+####################
+#..S.............E.#
+#...............F..#
+#..................#
+#..................#
+#..B...............#
+#=======....=======#
+#P.................#
+#........H...~~~...#
+#........H...~~~...#
+#........H.........#
+####################
+END
+
+ENDROOM

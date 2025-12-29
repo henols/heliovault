@@ -1,0 +1,33 @@
+{
+    "name": "escape-room",
+    "description": "Project escape-room",
+    "toolkit": "oscar64",
+    "sources": [
+        "asm/irq.asm",
+        "src/audio.c",
+        "src/collision.c",
+        "src/entity.c",
+        "src/input.c",
+        "src/inventory.c",
+        "src/irq.c",
+        "src/level_runtime.c",
+        "src/levels/boot_audit.c",
+        "src/main.c",
+        "src/menu.c",
+        "src/message.c",
+        "src/metatile.c",
+        "src/player.c",
+        "src/puzzle.c",
+        "src/render.c",
+        "src/room.c",
+        "src/textbox.c"
+    ],
+    "build": "debug",
+    "definitions": [],
+    "includes": [
+        "include",
+        "include/levels"
+    ],
+    "args": [],
+    "compiler": ""
+}
