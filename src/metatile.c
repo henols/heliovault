@@ -2,7 +2,7 @@
 
 #include "tileset_format.h"
 #include "tilesets/BOOT_AUDIT1_tset-blob.h"
-#include "tilesets/BOOT_AUDIT1_charset-blob.h"
+#include "charset/BOOT_AUDIT1_charset-blob.h"
 
 #include <stddef.h>
 

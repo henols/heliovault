@@ -3,9 +3,9 @@
 build_assets.py - Build tileset + all levels in one pass.
 
 Usage:
-  python tools/build_assets.py
-  python tools/build_assets.py --tset levels/tileset.tset
-  python tools/build_assets.py --levels levels
+  python tools/tasks/build_assets.py
+  python tools/tasks/build_assets.py --tset levels/tileset.tset
+  python tools/tasks/build_assets.py --levels levels
 """
 
 from __future__ import annotations
@@ -15,6 +15,8 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from gen_paths import GEN_ROOT
 
@@ -31,7 +33,7 @@ def main() -> None:
     ap.add_argument("--levels", default="levels", help="Directory containing .lvl files")
     args = ap.parse_args()
 
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[2]
     gen_root = root / GEN_ROOT
     tset_path = (root / args.tset).resolve()
     levels_dir = (root / args.levels).resolve()
@@ -53,7 +55,7 @@ def main() -> None:
 
     tilesetc = root / "tools" / "tilesetc.py"
     levelc = root / "tools" / "levelc.py"
-    gen_build = root / "tools" / "gen_build.py"
+    gen_build = root / "tools" / "tasks" / "gen_build.py"
 
     # Build tileset blob + ids header
     run([sys.executable, str(tilesetc), str(tset_path)])

@@ -4,15 +4,15 @@ This document lists the project tools, what they do, and how to run them.
 
 ---
 
-## build_assets.py
+## tools/tasks/build_assets.py
 
 Builds a tileset and all levels in one pass.
 
 Usage:
 ```
-python tools/build_assets.py
-python tools/build_assets.py --tset levels/BOOT_AUDIT1.tset
-python tools/build_assets.py --levels levels
+python tools/tasks/build_assets.py
+python tools/tasks/build_assets.py --tset levels/BOOT_AUDIT1.tset
+python tools/tasks/build_assets.py --levels levels
 ```
 
 Inputs:
@@ -32,13 +32,13 @@ Notes:
 
 ---
 
-## gen_build.py
+## tools/tasks/gen_build.py
 
 Expands `project-config.json` sources so VS64 can build directory/glob entries.
 
 Usage:
 ```
-python tools/gen_build.py
+python tools/tasks/gen_build.py
 ```
 
 Inputs:
@@ -63,15 +63,15 @@ python tools/tilesetc.py levels/BOOT_AUDIT1.tset -o assets/BOOT_AUDIT1.bin
 
 Outputs:
 - `gen/assets/<name>.bin`
-- `gen/include/<name>_tset_ids.h`
+- `gen/include/tilesets/<name>_tset_ids.h`
 - `gen/include/tilesets/<name>_tset-blob.h`
 - `gen/src/tilesets/<name>_tset.c`
-- `gen/include/tilesets/<name>_charset-blob.h` (when `charset=` is set)
-- `gen/src/tilesets/<name>_charset.c` (when `charset=` is set)
+- `gen/include/charset/<name>_charset-blob.h` (when `charset=` is set)
+- `gen/src/charset/<name>_charset.c` (when `charset=` is set)
 - `gen/analysis/tilesets/<name>.sym`
 - `gen/analysis/tilesets/<name>.json`
 
-See `docs/tset_format.md` for format details.
+See [docs/tset_format.md](tset_format.md) for format details.
 
 ---
 
@@ -89,29 +89,10 @@ Outputs:
 - `gen/src/levels/<level>.c`
 - `gen/include/levels/<level>.h`
 - `gen/include/levels/<level>-blob.h`
-- `gen/include/level_format.h`
 - `gen/analysis/levels/<level>.sym`
 - `gen/analysis/levels/<level>.json`
 
-See `docs/levelc.md` and `docs/lvl_format.md` for format details.
-
----
-
-## levelc_all.py
-
-Compiles all `.lvl` files and emits a depfile + stamp for build systems.
-
-Usage:
-```
-python tools/levelc_all.py --levels levels \
-  --stamp debug/levels/levels.stamp \
-  --depfile debug/levels/levels.d
-```
-
-Outputs:
-- All level outputs from `levelc.py`
-- A stamp file (`--stamp`)
-- A depfile listing all `.lvl` inputs (`--depfile`)
+See [docs/levelc.md](levelc.md) and [docs/lvl_format.md](lvl_format.md) for format details.
 
 ---
 
@@ -142,32 +123,15 @@ Notes:
 
 ---
 
-## md_sketch_to_png.py
-
-Renders fenced code blocks from a markdown file into a single PNG.
-
-Usage:
-```
-python tools/md_sketch_to_png.py docs/level_art_prompt.txt debug/level_art_prompt.png --scale 2
-```
-
-Inputs:
-- Markdown file with fenced code blocks.
-
-Outputs:
-- One PNG rendering of the combined blocks.
-
----
-
-## watch_assets.py
+## tools/tasks/watch_assets.py
 
 Watches `.tset` and `.lvl` files and rebuilds outputs when they change.
 
 Usage:
 ```
-python tools/watch_assets.py --levels levels --tset levels/tileset.tset
-python tools/watch_assets.py --once
-python tools/watch_assets.py /path/to/project
+python tools/tasks/watch_assets.py --levels levels --tset levels/tileset.tset
+python tools/tasks/watch_assets.py --once
+python tools/tasks/watch_assets.py /path/to/project
 ```
 
 Behavior:
@@ -204,7 +168,7 @@ python tools/levelc.py levels/boot_audit.lvl
 
 3) Expand sources for VS64 (so new tileset C files are linked):
 ```
-python tools/gen_build.py --in-place
+python tools/tasks/gen_build.py
 ```
 
 4) Build the PRG (VS64 rebuild or your CLI build command).
@@ -225,8 +189,10 @@ python tools/levelc.py levels/boot_audit.lvl
 ### Rebuild everything (assets + levels)
 
 ```
-python tools/build_assets.py --tset levels/BOOT_AUDIT1.tset --levels levels
-python tools/gen_build.py --in-place
+python tools/tasks/build_assets.py --tset levels/BOOT_AUDIT1.tset --levels levels
+python tools/tasks/gen_build.py
 ```
 
 Then build the PRG.
+
+---

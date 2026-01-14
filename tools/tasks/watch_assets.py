@@ -3,9 +3,9 @@
 watch_assets.py - Rebuild tileset and levels when inputs or outputs change.
 
 Usage:
-  python tools/watch_assets.py --levels levels --tset levels/tileset.tset
-  python tools/watch_assets.py --once
-  python tools/watch_assets.py /path/to/project
+  python tools/tasks/watch_assets.py --levels levels --tset levels/tileset.tset
+  python tools/tasks/watch_assets.py --once
+  python tools/tasks/watch_assets.py /path/to/project
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from gen_paths import GEN_ROOT, ANALYSIS_ROOT
 
@@ -144,7 +146,7 @@ def _tset_outputs_for(path: Path, root: Path) -> list[Path]:
     name = path.stem
     outputs = [
         root / GEN_ROOT / "assets" / f"{name}.bin",
-        root / GEN_ROOT / "include" / f"{name}_tset_ids.h",
+        root / GEN_ROOT / "include" / "tilesets" / f"{name}_tset_ids.h",
         root / GEN_ROOT / "include" / "tilesets" / f"{name}_tset-blob.h",
         root / GEN_ROOT / "src" / "tilesets" / f"{name}_tset.c",
         root / ANALYSIS_ROOT / "tilesets" / f"{name}.sym",
@@ -153,8 +155,8 @@ def _tset_outputs_for(path: Path, root: Path) -> list[Path]:
     if _tset_has_charset(path):
         outputs.extend(
             [
-                root / GEN_ROOT / "include" / "tilesets" / f"{name}_charset-blob.h",
-                root / GEN_ROOT / "src" / "tilesets" / f"{name}_charset.c",
+                root / GEN_ROOT / "include" / "charset" / f"{name}_charset-blob.h",
+                root / GEN_ROOT / "src" / "charset" / f"{name}_charset.c",
             ]
         )
     return outputs
@@ -196,7 +198,6 @@ def run_once(
             root / GEN_ROOT / "src" / "levels" / f"{base}.c",
             root / ANALYSIS_ROOT / "levels" / f"{base}.json",
             root / ANALYSIS_ROOT / "levels" / f"{base}.sym",
-            root / GEN_ROOT / "include" / "level_format.h",
         ]
         if should_run(lvl, outputs, cache):
             if run([sys.executable, str(levelc), str(lvl)]):
@@ -234,14 +235,14 @@ def run_tset_only(
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("root", nargs="?", default=".", help="Project root (default: .)")
+    ap.add_argument("root", nargs="?", default="", help="Project root (default: repo root)")
     ap.add_argument("--levels", default="levels", help="Directory containing .lvl files")
     ap.add_argument("--tset", default="levels/tileset.tset", help="Tileset .tset")
     ap.add_argument("--interval", type=float, default=0.5, help="Polling interval in seconds")
     ap.add_argument("--once", action="store_true", help="Run a single pass and exit")
     args = ap.parse_args()
 
-    root = Path(args.root).resolve()
+    root = (Path(args.root).resolve() if args.root else Path(__file__).resolve().parents[2])
     levels_dir = (root / args.levels).resolve()
     tset_path = (root / args.tset).resolve()
     cache_path = root / "build" / ".asset_cache.json"

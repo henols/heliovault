@@ -156,7 +156,7 @@ Use helpers in `include/level_format.h`:
 The toolchain emits C files that embed blobs at compile time:
 
 - `gen/src/levels/<level>.c` for LVL
-- `gen/src/tilesets/<name>_tset.c` and `gen/src/tilesets/<name>_charset.c` for TSET/charset
+- `gen/src/tilesets/<name>_tset.c` and `gen/src/charset/<name>_charset.c` for TSET/charset
 
 These expose:
 

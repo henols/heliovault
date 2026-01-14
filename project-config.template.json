@@ -21,7 +21,8 @@
         "src/room.c",
         "src/textbox.c",
         "gen/src/levels/",
-        "gen/src/tilesets/"
+        "gen/src/tilesets/",
+        "gen/src/charset/"
     ],
     "build": "debug",
     "definitions": [],
@@ -29,6 +30,7 @@
         "gen/include",
         "gen/include/levels",
         "gen/include/tilesets",
+        "gen/include/charset",
         "include"
     ],
     "args": [],

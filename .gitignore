@@ -9,3 +9,5 @@ gen/analysis
 .claude/
 
 tools/__pycache__/
+
+tools/tasks/__pycache__/

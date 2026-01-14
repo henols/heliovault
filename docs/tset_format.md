@@ -129,10 +129,10 @@ python tools/tilesetc.py levels/level_maint_bg.tset -o gen/assets/level_maint_bg
 
 Generates:
 - `gen/assets/<name>.bin`
-- `gen/include/<name>_tset_ids.h`
+- `gen/include/tilesets/<name>_tset_ids.h`
 - `gen/include/tilesets/<name>_tset-blob.h`
 - `gen/src/tilesets/<name>_tset.c`
-- `gen/include/tilesets/<name>_charset-blob.h` (if `charset=` set)
-- `gen/src/tilesets/<name>_charset.c` (if `charset=` set)
+- `gen/include/charset/<name>_charset-blob.h` (if `charset=` set)
+- `gen/src/charset/<name>_charset.c` (if `charset=` set)
 - `gen/analysis/tilesets/<name>.sym`
 - `gen/analysis/tilesets/<name>.json`

@@ -28,7 +28,7 @@ Key runtime files:
 - `src/level_runtime.c`: wraps the blob and provides helpers
 - `src/room.c`: uses blob offsets to access map/spawn/exit/object data
 - `src/puzzle.c`: interprets condition/action bytecode
- - `include/level_format.h`: binary offsets + helpers (LVL format)
+- `include/level_format.h`: binary offsets + helpers (LVL format)
  - `include/tileset_format.h`: binary offsets + helpers (TSET format)
 
 Oscar64 runtime helpers used:
@@ -156,7 +156,7 @@ Low-level blob access:
 uint16_t map_ofs = lvl_room_map_ofs(level_get_blob(), room_get_id());
 ```
 
-For byte layouts and offsets, see `docs/binary_formats.md`.
+For byte layouts and offsets, see [docs/binary_formats.md](binary_formats.md).
 
 ---
 
@@ -178,5 +178,5 @@ if obj && puzzle_conditions_pass(obj.cond):
 
 ## 9) Files to read next
 
-- `docs/levelc.md` for the level compiler and format
-- `docs/architecture.md` for the architecture overview
+- [docs/levelc.md](levelc.md) for the level compiler and format
+- [docs/architecture.md](architecture.md) for the architecture overview

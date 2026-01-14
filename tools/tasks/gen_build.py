@@ -13,6 +13,8 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 
 def is_glob(s: str) -> bool:
     return any(ch in s for ch in ["*", "?", "["])
@@ -73,7 +75,7 @@ def main() -> None:
     ap.add_argument("--out", default="project-config.json", help="Output config path")
     args = ap.parse_args()
 
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[2]
     config_path = (root / args.config).resolve()
     out_path = (root / args.out).resolve()
 

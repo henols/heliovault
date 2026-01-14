@@ -6,7 +6,7 @@
             "type": "shell",
             "command": "${workspaceFolder}/.venv/bin/python",
             "args": [
-                "${workspaceFolder}/tools/watch_assets.py",
+                "${workspaceFolder}/tools/tasks/watch_assets.py",
                 "${workspaceFolder}"
             ],
             "isBackground": true,
@@ -48,7 +48,7 @@
             "label": "build assets",
             "command": "python",
             "args": [
-                "${workspaceFolder}/tools/build_assets.py"
+                "${workspaceFolder}/tools/tasks/build_assets.py"
             ],
             "problemMatcher": {
                 "owner": "assetgen",
@@ -73,7 +73,7 @@
             "label": "expand project-config sources",
             "command": "python",
             "args": [
-                "${workspaceFolder}/tools/gen_build.py"
+                "${workspaceFolder}/tools/tasks/gen_build.py"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"

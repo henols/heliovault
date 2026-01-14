@@ -915,22 +915,22 @@ def compile_act_script(
 def blob_to_c_array(blob: bytes, array_name: str) -> str:
     # 12 bytes per line is readable
     lines: List[str] = []
-    lines.append(f"const unsigned char {array_name}[] = {{\n")
+    lines.append(f"unsigned char {array_name}[] = {{\n")
     for i in range(0, len(blob), 12):
         chunk = blob[i : i + 12]
         hexes = ",".join(f"0x{b:02X}" for b in chunk)
         lines.append(f"  {hexes},\n")
     lines.append("};\n")
-    lines.append(f"const unsigned long {array_name}_size = (unsigned long)sizeof({array_name});\n")
+    lines.append(f"unsigned long {array_name}_size = (unsigned long)sizeof({array_name});\n")
     return "".join(lines)
 
 
 def blob_to_c_embed(bin_path: str, array_name: str) -> str:
     return (
-        f"const unsigned char {array_name}[] = {{\n"
+        f"unsigned char {array_name}[] = {{\n"
         f"#embed \"{bin_path}\"\n"
         f"}};\n"
-        f"const unsigned long {array_name}_size = (unsigned long)sizeof({array_name});\n"
+        f"unsigned long {array_name}_size = (unsigned long)sizeof({array_name});\n"
     )
 
 
@@ -938,8 +938,8 @@ def make_blob_h(array_name: str) -> str:
     guard = array_name.upper() + "_H"
     return (
         f"#pragma once\n"
-        f"extern const unsigned char {array_name}[];\n"
-        f"extern const unsigned long {array_name}_size;\n"
+        f"extern unsigned char {array_name}[];\n"
+        f"extern unsigned long {array_name}_size;\n"
     )
 
 
@@ -1724,8 +1724,7 @@ def main():
         args.blob_c = os.path.join(args.out_src, f"{base_name}.c")
     if not args.blob_h:
         args.blob_h = os.path.join(args.out_include, f"{base_name}-blob.h")
-    if not args.format_h:
-        args.format_h = os.path.join(GEN_ROOT, "include", "level_format.h")
+    # level_format.h is a static header in include/, unless explicitly overridden.
     if not args.blob_name:
         args.blob_name = f"{c_ident}_blob"
 
@@ -1741,7 +1740,7 @@ def main():
         args.blob_c = os.path.join(project_root, args.blob_c)
     if not os.path.isabs(args.blob_h):
         args.blob_h = os.path.join(project_root, args.blob_h)
-    if not os.path.isabs(args.format_h):
+    if args.format_h and not os.path.isabs(args.format_h):
         args.format_h = os.path.join(project_root, args.format_h)
 
     # .bin
@@ -1806,15 +1805,16 @@ def main():
         print(f"Error writing blob C file {args.blob_c}: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # format/accessor header
-    try:
-        with open(args.format_h, "w", encoding="utf-8") as f:
-            f.write("// Provided by levelc.py\n")
-            f.write(make_format_h())
-        print(f"Wrote {args.format_h}")
-    except Exception as e:
-        print(f"Error writing format header {args.format_h}: {e}", file=sys.stderr)
-        sys.exit(1)
+    # format/accessor header (optional)
+    if args.format_h:
+        try:
+            with open(args.format_h, "w", encoding="utf-8") as f:
+                f.write("// Provided by levelc.py\n")
+                f.write(make_format_h())
+            print(f"Wrote {args.format_h}")
+        except Exception as e:
+            print(f"Error writing format header {args.format_h}: {e}", file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -127,7 +127,6 @@ This writes outputs into:
 - `.bin` → `gen/assets/levels/`
 - `.c` → `gen/src/levels/`
 - `-blob.h`, ids `.h` → `gen/include/levels/`
-- `level_format.h` → `gen/include/`
 - `.sym`, `.json` → `gen/analysis/levels/`
 
 All files use the LEVEL name as the base filename (sanitized).
@@ -156,7 +155,7 @@ Optional overrides:
 - `--sym` write symbol map to a specific path
 - `--blob-c` / `--blob-h` write the blob C/header to a specific path
 - `--blob-name` override the C symbol name (default `<level>_blob`)
-- `--format-h` write `level_format.h` to a specific path
+- `--format-h` write `level_format.h` to a specific path (normally static in `include/`)
 
 ---
 
