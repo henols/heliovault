@@ -6,14 +6,15 @@ Outputs:
   - .bin           Packed binary level blob (offset-based)
   - *_ids.h        Enums for flags/vars/items/messages + ObjType constants
   - .sym           Human-readable symbol map (offsets, rooms, objects, scripts, messages)
-  - .c/.h          Embeds blob as C uint8_t array + exports size
-  - level_format.h Inline accessors/constants for reading the blob in C
+  - .json          Optional debug summary (enabled by default)
+  - .c/.h          Embeds blob as C unsigned char[] + exports size
+  - level_format.h Inline accessors/constants when --format-h is provided
 
 Usage:
   python tools/levelc.py levels/level1.lvl
 
-By default this writes all required output files into the project root, using the
-LEVEL name as the base filename (sanitized to a safe identifier).
+By default this writes output files into gen/ directories, using the LEVEL name
+as the base filename (sanitized to a safe identifier).
 
 Notes:
 - Comments start with ';' (so '#' is safe for tiles).

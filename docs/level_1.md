@@ -239,4 +239,4 @@ Context-sensitive examples:
 
 ---
 
-If you want the next step: I’ll turn this into **authorable room data** (metatile interactables list + conditions/actions) so it drops straight into your engine’s flag/trigger tables. 
+Next step: turn this into **authorable room data** (metatile interactables list + conditions/actions) so it drops straight into the engine’s flag/trigger tables.

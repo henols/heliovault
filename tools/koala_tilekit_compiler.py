@@ -5,7 +5,7 @@ Compile a C64 Koala image plus a tile spec into a tileset, charset, and maps.
 
 Inputs:
   - Koala Painter .kla (images/level_maint_bg.kla)
-  - Spec markdown or JSON (images/level_maint_bg.md or .json)
+  - Spec JSON (images/level_maint_bg.json)
 
 Outputs:
   - charset (.bin) in assets
@@ -44,14 +44,6 @@ C64 = {
     15: ("light_grey", (187, 187, 187)),
 }
 PAL = np.array([C64[i][1] for i in range(16)], dtype=np.uint8)
-
-MT_RE = re.compile(r"^METATILE\s+(\S+)\s+(.+)$", re.IGNORECASE)
-SAMPLE_RE = re.compile(r"SAMPLE_C64_XY:\s*\((\d+),\s*(\d+)\)", re.IGNORECASE)
-FLAGS_RE = re.compile(r"FLAGS:\s*([A-Z0-9_,| ]+)", re.IGNORECASE)
-FROM_OBJ_RE = re.compile(r"FROM_OBJECT:\s*(\S+)", re.IGNORECASE)
-ROLE_RE = re.compile(r"ROLE:\s*(.+)", re.IGNORECASE)
-VARIANT_RE = re.compile(r"VARIANT_OF:\s*(\S+)", re.IGNORECASE)
-REUSE_RE = re.compile(r"REUSE_NOTE:\s*(.+)", re.IGNORECASE)
 
 
 def load_kla(path: Path) -> np.ndarray:
@@ -185,52 +177,6 @@ def render_mc_char(char8: bytes, lc: int, bg: int, mc1: int, mc2: int) -> np.nda
             out[y, 2 * xmc] = col
             out[y, 2 * xmc + 1] = col
     return out
-
-
-def parse_md(path: Path):
-    entries = []
-    cur = None
-    raw_lines = path.read_text(encoding="utf-8").splitlines()
-    for raw in raw_lines:
-        line = raw.strip()
-        if not line:
-            continue
-        m = MT_RE.match(line)
-        if m:
-            if cur:
-                entries.append(cur)
-            cur = {
-                "id": m.group(1),
-                "name": m.group(2).strip(),
-                "flags": "DECOR",
-                "from_object": "",
-                "role": "",
-                "variant_of": "",
-                "reuse_note": "",
-            }
-            continue
-        if cur:
-            sm = SAMPLE_RE.search(line)
-            if sm:
-                cur["sample"] = tuple(int(v) for v in sm.groups())
-            fm = FLAGS_RE.search(line)
-            if fm:
-                cur["flags"] = normalize_flags(fm.group(1))
-            om = FROM_OBJ_RE.search(line)
-            if om:
-                cur["from_object"] = om.group(1).strip()
-            rm = ROLE_RE.search(line)
-            if rm:
-                cur["role"] = rm.group(1).strip()
-            vm = VARIANT_RE.search(line)
-            if vm:
-                cur["variant_of"] = vm.group(1).strip()
-            rn = REUSE_RE.search(line)
-            if rn:
-                cur["reuse_note"] = rn.group(1).strip()
-    if cur:
-        entries.append(cur)
-    return entries, raw_lines
 
 
 def parse_json(path: Path):
@@ -376,22 +322,22 @@ def tile_distance(a, b) -> int:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("md", help="Spec markdown")
-    ap.add_argument("--kla", default="", help="Koala file (defaults to match md name)")
-    ap.add_argument("--out-dir", default="", help="Output directory (defaults to debug/<md name>)")
-    ap.add_argument("--charset", default="", help="Output charset bin (defaults to assets/<md name>_chargen.bin)")
-    ap.add_argument("--tset", default="", help="Output tileset (defaults to levels/<md name>.tset)")
-    ap.add_argument("--tmap", default="", help="Output full map (defaults to debug/<md name>/<md name>_tmap.bin)")
-    ap.add_argument("--tile-map", default="", help="Output tile location map (defaults to debug/<md name>/<md name>_tile_locations.png)")
-    ap.add_argument("--info", default="", help="Output info (defaults to debug/<md name>/<md name>_info.txt)")
+    ap.add_argument("spec", help="Spec JSON")
+    ap.add_argument("--kla", default="", help="Koala file (defaults to match spec name)")
+    ap.add_argument("--out-dir", default="", help="Output directory (defaults to debug/<spec name>)")
+    ap.add_argument("--charset", default="", help="Output charset bin (defaults to assets/<spec name>_chargen.bin)")
+    ap.add_argument("--tset", default="", help="Output tileset (defaults to levels/<spec name>.tset)")
+    ap.add_argument("--tmap", default="", help="Output full map (defaults to debug/<spec name>/<spec name>_tmap.bin)")
+    ap.add_argument("--tile-map", default="", help="Output tile location map (defaults to debug/<spec name>/<spec name>_tile_locations.png)")
+    ap.add_argument("--info", default="", help="Output info (defaults to debug/<spec name>/<spec name>_info.txt)")
     ap.add_argument("--fast", action="store_true", help="Use fast MC1/MC2 selection")
     args = ap.parse_args()
 
     root = Path(__file__).resolve().parent.parent
-    md_path = (root / args.md).resolve()
-    base_name = md_path.stem
+    spec_path = (root / args.spec).resolve()
+    base_name = spec_path.stem
     if not args.kla:
-        args.kla = str(Path(md_path.parent) / f"{base_name}.kla")
+        args.kla = str(Path(spec_path.parent) / f"{base_name}.kla")
     if not args.out_dir:
         args.out_dir = str(Path(ANALYSIS_ROOT) / base_name)
     if not args.charset:
@@ -413,12 +359,11 @@ def main() -> None:
     tile_map_path = (root / args.tile_map).resolve()
     info_path = (root / args.info).resolve()
 
-    if md_path.suffix.lower() == ".json":
-        entries, _ = parse_json(md_path)
-    else:
-        entries, _ = parse_md(md_path)
+    if spec_path.suffix.lower() != ".json":
+        raise SystemExit(f"Spec must be JSON: {spec_path}")
+    entries, _ = parse_json(spec_path)
     if not entries:
-        raise SystemExit(f"No entries found in {md_path}")
+        raise SystemExit(f"No entries found in {spec_path}")
 
     idx = load_kla(kla_path)
     bg, _, _ = choose_global_colors(idx)
@@ -701,7 +646,7 @@ def main() -> None:
     md_tiles.append(f"# {base_name} Tiles\n\n")
     md_tiles.append("## Overview\n\n")
     md_tiles.append(f"![tile locations]({tile_map_path.name})\n\n")
-    orig_png = md_path.parent / f"{base_name}.png"
+    orig_png = spec_path.parent / f"{base_name}.png"
     if orig_png.exists():
         rel = Path(os.path.relpath(orig_png, tiles_md.parent)).as_posix()
         md_tiles.append(f"![source image]({rel})\n\n")
@@ -794,7 +739,7 @@ def main() -> None:
 
     info = "\n".join([
         f"INPUT: {kla_path.name}",
-        f"SOURCE: {md_path.name}",
+        f"SOURCE: {spec_path.name}",
         "",
         "Multicolor character mode setup:",
         "  $D016 bit4 = 1",

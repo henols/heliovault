@@ -239,4 +239,4 @@ Legend: `R` receiver, `D` drawer, `G` glass, `L` laser hazard
 * Propaganda setting pays off narratively with a **physical proof object**.
 * No softlocks: valves can be flipped forever; ticket can be reprinted if lost (kiosk can reprint once token is used and the flag is set).
 
-If you want, Level 5 can be the **Spine** as a vertical 4–5 room climb where ORACLE starts actively reshaping routes—but still puzzle-first, not combat.
+Optional: Level 5 can be the **Spine** as a vertical 4–5 room climb where ORACLE starts actively reshaping routes—but still puzzle-first, not combat.

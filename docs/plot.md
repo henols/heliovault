@@ -45,6 +45,8 @@ Friendly NPCs (simple, readable roles)
 
 Designed to work with your TALK / GIVE / USE / OPERATE menu model. 
 
+See [docs/characters.md](characters.md) for the full character list and details.
+
 1. MIRA (Intercom Tech) – trapped behind blast glass; gives hints in exchange for parts (“FUSE”, “TAPE”, “BADGE CHIP”).
 
 
@@ -71,6 +73,15 @@ Room completion stingers: “SECTOR CLEAR. NEXT AUDIT SCHEDULED.”
 Plot Spine (what the levels mean)
 
 You can map this across your 1–4 room levels without bloating dialogue. 
+
+Level docs:
+- [docs/level_1.md](level_1.md)
+- [docs/level_2.md](level_2.md)
+- [docs/level_3.md](level_3.md)
+- [docs/level_4.md](level_4.md)
+- [docs/level_5.md](level_5.md)
+- [docs/level_6.md](level_6.md)
+- [docs/level_7.md](level_7.md)
 
 1. Boot Sector: You learn HelioVault is a machine that expects obedience. (Restore power, get basic access.)
 
@@ -125,4 +136,4 @@ A few “Player-facing” text lines you can reuse
 “ACCESS GRANTED: MAINT-3.”
 
 
-If you want, I’ll turn this plot into a Level 1 (1–2 rooms) story+Puzzle breakdown that teaches the world with almost no exposition—just objects, signs, and one NPC beat.
+Level 1 is broken down in [docs/level_1.md](level_1.md).

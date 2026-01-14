@@ -263,4 +263,4 @@ Legend: `A` airlock door, `F` float platform, `R` pass printer, `~` water, `!` h
 * `has_pass`
 * `lift_open`
 
-If you want Level 3 to hit harder emotionally without adding complexity: after you print the DECON PASS, have the printer also spit a second slip: `OUTSIDE STATUS: UNKNOWN (DATA WITHHELD)`—tiny, nasty, memorable.
+Optional: for a harder emotional hit without added complexity, after you print the DECON PASS, have the printer also spit a second slip: `OUTSIDE STATUS: UNKNOWN (DATA WITHHELD)`—tiny, nasty, memorable.

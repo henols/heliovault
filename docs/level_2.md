@@ -134,7 +134,7 @@ This keeps “action supports puzzles,” not combat/platform precision.
 
 **Enemy pressure (optional):**
 
-* One slow **patrol drone** that just bumps/knocks back (no death). If you want a “clean” puzzle room, skip it—this level already has enough moving parts. 
+* One slow **patrol drone** that just bumps/knocks back (no death). Optional: skip it for a cleaner puzzle room—this level already has enough moving parts.
 
 **Player-facing text:**
 
@@ -319,4 +319,4 @@ Legend: `P` pedal, `O` dock console, `T` turnstile (exit), `=` slow platform
 
 ---
 
-If you want Level 2 to feel a bit nastier (without becoming “action game”), the clean upgrade is: make Room D the only **pressure room** where the menu doesn’t pause for ~10 seconds after docking starts. Use sparingly, clearly labeled, per the rules. 
+Optional: to make Level 2 feel a bit nastier (without becoming “action game”), make Room D the only **pressure room** where the menu doesn’t pause for ~10 seconds after docking starts. Use sparingly, clearly labeled, per the rules.

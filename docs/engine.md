@@ -178,5 +178,5 @@ if obj && puzzle_conditions_pass(obj.cond):
 
 ## 9) Files to read next
 
-- [docs/levelc.md](levelc.md) for the level compiler and format
+- [docs/tools.md](tools.md) and [docs/lvl_format.md](lvl_format.md) for the level compiler and format
 - [docs/architecture.md](architecture.md) for the architecture overview
