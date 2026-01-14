@@ -52,8 +52,8 @@ FIXED_FLAGBITS = {
     "HAZARD": 7,
 }
 
-def parse_tset(path: str):
-    return parse_tset_shared(path)
+def parse_tset(path: str, error_cb=None):
+    return parse_tset_shared(path, error_cb=error_cb)
 
 
 def strip_comment(line: str) -> str:
@@ -632,8 +632,13 @@ def main():
     args = ap.parse_args()
 
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    errors: List[Tuple[int, int, str]] = []
+
+    def record_error(message: str, line: int, col: int) -> None:
+        errors.append((line, col, message))
+
     try:
-        ts = parse_tset(args.input)
+        ts = parse_tset(args.input, error_cb=record_error)
     except TilesetParseError as e:
         path = os.path.abspath(e.path)
         print(f"{path}:{e.line}:{e.col}: error: {e.message}", file=sys.stderr)
@@ -641,6 +646,11 @@ def main():
     except Exception as e:
         path = os.path.abspath(args.input)
         print(f"{path}:1:1: error: {e}", file=sys.stderr)
+        sys.exit(1)
+    if errors:
+        path = os.path.abspath(args.input)
+        for line, col, message in errors:
+            print(f"{path}:{line}:{col}: error: {message}", file=sys.stderr)
         sys.exit(1)
     blob, ids_h, debug, sym_text, blob_h, blob_c = compile_tset(ts)
 

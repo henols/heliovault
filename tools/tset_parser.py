@@ -203,15 +203,17 @@ def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = 
             name = kv.get("name", os.path.splitext(os.path.basename(path))[0])
             if "tileSize" not in kv:
                 err("TSET requires tileSize=2x2", line_no, _col_for_token(raw_line, "TSET"))
-            size = kv["tileSize"].lower()
+            size = kv.get("tileSize", "2x2").lower()
             if "x" not in size:
                 err("tileSize must look like 2x2", line_no, _col_for_token(raw_line, "tileSize"))
+                size = "2x2"
             tw, th = size.split("x", 1)
             if "count" in kv:
                 try:
                     declared_count = parse_num(kv["count"])
                 except ValueError:
                     err(f"Invalid count value: {kv['count']}", line_no, _col_for_kv_value(raw_line, "count"))
+                    declared_count = 0
                 if declared_count is None:
                     declared_count = 0
             else:
@@ -221,6 +223,8 @@ def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = 
                 tile_h = int(th)
             except ValueError:
                 err(f"tileSize must contain integers: {size}", line_no, _col_for_token(raw_line, "tileSize"))
+                tile_w = 2
+                tile_h = 2
             ts = TsetParseResult(
                 name=name,
                 tile_w=tile_w,
@@ -241,17 +245,20 @@ def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = 
             if "mc2Color" not in kv:
                 err("TSET requires mc2Color=", line_no, _col_for_token(raw_line, "TSET"))
             try:
-                ts.bg_color = parse_color(kv["bgColor"])
+                ts.bg_color = parse_color(kv.get("bgColor", "0"))
             except ValueError:
-                err(f"Invalid bgColor value: {kv['bgColor']}", line_no, _col_for_kv_value(raw_line, "bgColor"))
+                err(f"Invalid bgColor value: {kv.get('bgColor')}", line_no, _col_for_kv_value(raw_line, "bgColor"))
+                ts.bg_color = 0
             try:
-                ts.mc1_color = parse_color(kv["mc1Color"])
+                ts.mc1_color = parse_color(kv.get("mc1Color", "0"))
             except ValueError:
-                err(f"Invalid mc1Color value: {kv['mc1Color']}", line_no, _col_for_kv_value(raw_line, "mc1Color"))
+                err(f"Invalid mc1Color value: {kv.get('mc1Color')}", line_no, _col_for_kv_value(raw_line, "mc1Color"))
+                ts.mc1_color = 0
             try:
-                ts.mc2_color = parse_color(kv["mc2Color"])
+                ts.mc2_color = parse_color(kv.get("mc2Color", "0"))
             except ValueError:
-                err(f"Invalid mc2Color value: {kv['mc2Color']}", line_no, _col_for_kv_value(raw_line, "mc2Color"))
+                err(f"Invalid mc2Color value: {kv.get('mc2Color')}", line_no, _col_for_kv_value(raw_line, "mc2Color"))
+                ts.mc2_color = 0
             if not (0 <= ts.bg_color <= 15):
                 err("bgColor must be 0..15", line_no, _col_for_kv_value(raw_line, "bgColor"))
             if not (0 <= ts.mc1_color <= 15):
@@ -271,6 +278,20 @@ def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = 
 
         if ts is None:
             err("File must start with TSET ...", line_no)
+            if error_cb:
+                ts = TsetParseResult(
+                    name=os.path.splitext(os.path.basename(path))[0],
+                    tile_w=2,
+                    tile_h=2,
+                    declared_count=0,
+                    bg_color=0,
+                    mc1_color=0,
+                    mc2_color=0,
+                    charset_path="",
+                    flagbits=dict(FIXED_FLAGBITS),
+                )
+                mode = None
+                continue
 
         if head == "FLAGBITS":
             err("FLAGBITS section is not allowed in .tset files", line_no, _col_for_token(raw_line, "FLAGBITS"))
@@ -293,6 +314,7 @@ def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = 
                     tid = parse_num(kv["id"])
                 except ValueError:
                     err(f"Invalid TILE id: {kv['id']}", line_no, _col_for_kv_value(raw_line, "id"))
+                    tid = next_id
                 if tid >= next_id:
                     next_id = tid + 1
             else:
@@ -305,12 +327,18 @@ def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = 
             kv = parse_kv(line)
             if "id" not in kv:
                 err(f"TILE missing id=: {line}", line_no, _col_for_token(raw_line, "TILE"))
-            try:
-                tid = parse_num(kv["id"])
-            except ValueError:
-                err(f"Invalid TILE id: {kv['id']}", line_no, _col_for_kv_value(raw_line, "id"))
+                tid = next_id
+                next_id += 1
+            else:
+                try:
+                    tid = parse_num(kv["id"])
+                except ValueError:
+                    err(f"Invalid TILE id: {kv['id']}", line_no, _col_for_kv_value(raw_line, "id"))
+                    tid = next_id
+                    next_id += 1
             if not (0 <= tid <= 255):
                 err("TILE id must be 0..255", line_no, _col_for_kv_value(raw_line, "id"))
+                tid = max(0, min(tid, 255))
             name = kv.get("name", f"TILE_{tid}")
         else:
             if mode == "CHARMAP":
@@ -335,16 +363,20 @@ def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = 
 
         if not (0 <= tid <= 255):
             err("TILE id must be 0..255", line_no, _col_for_kv_value(raw_line, "id"))
+            tid = max(0, min(tid, 255))
 
         if not name:
             name = f"TILE_{tid}"
 
         if "chars" not in kv:
             err(f"TILE missing chars=: {line}", line_no, _col_for_token(raw_line, "chars"))
-        try:
-            chars = parse_int_list(kv["chars"], 4, parse_fn=parse_char_or_num)
-        except ValueError as e:
-            err(str(e), line_no, _col_for_kv_value(raw_line, "chars"))
+            chars = [0, 0, 0, 0]
+        else:
+            try:
+                chars = parse_int_list(kv["chars"], 4, parse_fn=parse_char_or_num)
+            except ValueError as e:
+                err(str(e), line_no, _col_for_kv_value(raw_line, "chars"))
+                chars = [0, 0, 0, 0]
         for c in chars:
             if not (0 <= c <= 255):
                 err(f"Char code out of range 0..255 in: {line}", line_no, _col_for_kv_value(raw_line, "chars"))
@@ -355,15 +387,19 @@ def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = 
                 colors = parse_int_list(kv["colors"], 4, parse_fn=parse_color)
             except ValueError as e:
                 err(str(e), line_no, _col_for_kv_value(raw_line, "colors"))
+                colors = [0, 0, 0, 0]
         elif "color" in kv:
             color_mode = 0
             try:
                 c = parse_color(kv["color"])
             except ValueError:
                 err(f"Invalid color value: {kv['color']}", line_no, _col_for_kv_value(raw_line, "color"))
+                c = 0
             colors = [c, 0, 0, 0]
         else:
             err(f"TILE must have color= or colors=: {line}", line_no, _col_for_token(raw_line, "TILE"))
+            color_mode = 0
+            colors = [0, 0, 0, 0]
 
         for c in colors:
             if not (0 <= c <= 15):
@@ -396,14 +432,28 @@ def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = 
             name_key = name_key[5:]
         if name_key in ts.tiles_by_name:
             err(f"Duplicate TILE name: {name}", line_no, _col_for_token(raw_line, name))
-        ts.tiles_by_name[name_key] = tid
         if tid in ts.tiles:
             err(f"Duplicate TILE id={tid}", line_no, _col_for_token(raw_line, "id"))
+        if name_key in ts.tiles_by_name or tid in ts.tiles:
+            continue
+        ts.tiles_by_name[name_key] = tid
         ts.tiles[tid] = tile
         continue
 
     if ts is None:
         err("No TSET header found", 1)
+        if error_cb:
+            ts = TsetParseResult(
+                name=os.path.splitext(os.path.basename(path))[0],
+                tile_w=2,
+                tile_h=2,
+                declared_count=0,
+                bg_color=0,
+                mc1_color=0,
+                mc2_color=0,
+                charset_path="",
+                flagbits=dict(FIXED_FLAGBITS),
+            )
 
     if len(ts.tiles) == 0:
         err("No TILE definitions found", 1)
