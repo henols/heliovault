@@ -26,7 +26,7 @@ uint8_t inventory_has(uint8_t item_id) {
     return 0;
 }
 
-void inventory_add(uint8_t item_id) {
+void inventory_add(ItemId item_id) {
     if (inventory_has(item_id)) {
         return;
     }
@@ -36,7 +36,7 @@ void inventory_add(uint8_t item_id) {
     inventory_items[inventory_count++] = item_id;
 }
 
-void inventory_remove(uint8_t item_id) {
+void inventory_remove(ItemId item_id) {
     uint8_t i;
 
     for (i = 0; i < inventory_count; ++i) {

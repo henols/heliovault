@@ -1,7 +1,11 @@
 # git ignores
 *~
 build
+gen
+gen/analysis
 .vscode/c_cpp_properties.json
 .vscode/settings.json
 
 .claude/
+
+tools/__pycache__/

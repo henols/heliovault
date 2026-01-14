@@ -11,15 +11,21 @@
 #include "textbox.h"
 #include "audio.h"
 #include "level_runtime.h"
+#include "metatile.h"
+#include "render.h"
 
 static void game_init(void) {
-    irq_init();
+    kernal_irq_disable();
+    // Temporarily disabled to isolate startup crash.
+    // irq_init();
     input_init();
     inventory_init();
     puzzle_init();
     menu_init();
     textbox_init();
     audio_init();
+    metatile_init();
+    render_init();
     room_load_with_spawn(level_get_start_room(), level_get_start_spawn());
     room_render();
     player_init();

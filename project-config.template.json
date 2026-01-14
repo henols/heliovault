@@ -20,9 +20,8 @@
         "src/render.c",
         "src/room.c",
         "src/textbox.c",
-        "gen/src/levels/boot_audit.c",
-        "gen/src/tilesets/BOOT_AUDIT1_charset.c",
-        "gen/src/tilesets/BOOT_AUDIT1_tset.c"
+        "gen/src/levels/",
+        "gen/src/tilesets/"
     ],
     "build": "debug",
     "definitions": [],

@@ -48,35 +48,35 @@ void puzzle_init(void) {
 void puzzle_update(void) {
 }
 
-unsigned char puzzle_flag_get(unsigned char flag_id) {
+unsigned char puzzle_flag_get(FlagId flag_id) {
     if (flag_id >= puzzle_flag_count) {
         return 0;
     }
     return (puzzle_flags[flag_id >> 3] >> (flag_id & 7u)) & 1u;
 }
 
-void puzzle_flag_set(unsigned char flag_id) {
+void puzzle_flag_set(FlagId flag_id) {
     if (flag_id >= puzzle_flag_count) {
         return;
     }
     puzzle_flags[flag_id >> 3] |= (uint8_t)(1u << (flag_id & 7u));
 }
 
-void puzzle_flag_clear(unsigned char flag_id) {
+void puzzle_flag_clear(FlagId flag_id) {
     if (flag_id >= puzzle_flag_count) {
         return;
     }
     puzzle_flags[flag_id >> 3] &= (uint8_t)~(1u << (flag_id & 7u));
 }
 
-unsigned char puzzle_var_get(unsigned char var_id) {
+unsigned char puzzle_var_get(VarId var_id) {
     if (var_id >= puzzle_var_count) {
         return 0;
     }
     return puzzle_vars[var_id];
 }
 
-void puzzle_var_set(unsigned char var_id, unsigned char value) {
+void puzzle_var_set(VarId var_id, unsigned char value) {
     if (var_id >= puzzle_var_count) {
         return;
     }

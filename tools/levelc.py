@@ -12,7 +12,7 @@ Outputs:
 Usage:
   python tools/levelc.py levels/level1.lvl
 
-By default this writes all required output files into the tools/ folder, using the
+By default this writes all required output files into the project root, using the
 LEVEL name as the base filename (sanitized to a safe identifier).
 
 Notes:
@@ -25,10 +25,10 @@ Notes:
     * HATCH_PANEL: alt0=fuse script, alt1=badge script, use=reject script (optional)
 
 LVLTEXT format summary (minimal):
-  LEVEL name="..." w=20 h=12 start=R0:S0
+  LEVEL name="..." w=20 h=12 start=R0:S0 tset=tileset.tset
   TILES
-    . 0
-    # 1
+    . FLOOR_A
+    # WALL
   END
   FLAGS ... END
   VARS  ... END
@@ -60,6 +60,9 @@ import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from gen_paths import GEN_ROOT, ANALYSIS_ROOT
+from tset_parser import parse_tset as parse_tset_shared
+
 
 # ----------------------------
 # Error collection
@@ -68,26 +71,42 @@ from typing import Dict, List, Optional, Tuple
 class ErrorCollector:
     """Collects errors during parsing and compilation instead of immediately raising exceptions."""
 
-    def __init__(self):
-        self.errors: List[str] = []
+    def __init__(self, default_file: Optional[str] = None):
+        self.errors: List[dict] = []
+        self.default_file = default_file
 
-    def add_error(self, error: str):
-        """Add an error to the collection."""
-        self.errors.append(error)
+    def add_error(
+        self,
+        message: str,
+        file: Optional[str] = None,
+        line: Optional[int] = None,
+        col: Optional[int] = None,
+        severity: str = "error",
+    ):
+        entry = {
+            "file": file or self.default_file or "<unknown>",
+            "line": line if line is not None else 1,
+            "col": col if col is not None else 1,
+            "severity": severity,
+            "message": message,
+        }
+        self.errors.append(entry)
 
     def has_errors(self) -> bool:
         """Check if any errors have been collected."""
         return len(self.errors) > 0
 
-    def report_and_exit(self, prefix: str = ""):
+    def report_and_exit(self):
         """Report all collected errors and exit if any exist."""
         if not self.has_errors():
             return
-
-        print(f"\n{prefix}Found {len(self.errors)} error(s):", file=sys.stderr)
-        for i, error in enumerate(self.errors, 1):
-            print(f"  {i}. {error}", file=sys.stderr)
-        print("", file=sys.stderr)
+        for entry in self.errors:
+            path = os.path.abspath(entry["file"])
+            line = entry["line"]
+            col = entry["col"]
+            sev = entry["severity"]
+            msg = entry["message"]
+            print(f"{path}:{line}:{col}: {sev}: {msg}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -194,7 +213,7 @@ OBJ_RECORD_SIZE = 22  # fixed in this tool
 class ScriptDef:
     name: str
     kind: str  # "COND" or "ACT"
-    lines: List[str] = field(default_factory=list)
+    lines: List[Tuple[int, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -204,6 +223,7 @@ class ObjDef:
     y: int
     type_name: str
     verbs: int
+    line_no: int
     props: Dict[str, str] = field(default_factory=dict)
     cond_name: str = "ALWAYS"
     # script refs (actions)
@@ -221,12 +241,13 @@ class ObjDef:
 class RoomDef:
     room_id: str
     name: str
-    spawns: Dict[str, Tuple[int, int]] = field(default_factory=dict)  # "S0" -> (x,y)
-    exits: List[Tuple[str, str, str]] = field(
+    line_no: int
+    spawns: Dict[str, Tuple[int, int, int]] = field(default_factory=dict)  # "S0" -> (x,y,line)
+    exits: List[Tuple[str, str, str, int]] = field(
         default_factory=list
-    )  # (edge "L", destRoomId, destSpawnId)
+    )  # (edge "L", destRoomId, destSpawnId, line)
     objects: List[ObjDef] = field(default_factory=list)
-    map_lines: List[str] = field(default_factory=list)
+    map_lines: List[Tuple[int, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -236,7 +257,9 @@ class LevelDef:
     h: int
     start_room: str
     start_spawn: str
+    line_no: int
     tiles: Dict[str, int] = field(default_factory=dict)
+    object_stamps: Dict[str, dict] = field(default_factory=dict)
     flags: List[str] = field(default_factory=list)
     vars: List[str] = field(default_factory=list)
     items: List[str] = field(default_factory=list)
@@ -260,6 +283,13 @@ def _strip_comment(line: str) -> str:
     return line.rstrip()
 
 
+def _col_for_token(line: str, token: str) -> int:
+    if not token:
+        return 1
+    idx = line.find(token)
+    return idx + 1 if idx >= 0 else 1
+
+
 def _unquote(s: str) -> str:
     s = s.strip()
     if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
@@ -274,30 +304,58 @@ def _parse_kv(line: str) -> Dict[str, str]:
     return out
 
 
+def _load_tset_tiles(path: str, errors: ErrorCollector) -> Tuple[Dict[str, int], Dict[str, int], Dict[str, dict]]:
+    def err_cb(message: str, line: int, col: int) -> None:
+        errors.add_error(message, file=path, line=line, col=col)
+
+    ts = parse_tset_shared(path, error_cb=err_cb)
+    tiles = dict(ts.tiles_by_name)
+    charmap = dict(ts.charmap_tiles)
+    objects = dict(ts.object_stamps)
+    return tiles, charmap, objects
+
+
+def _resolve_tile_id(token: str, tset_tiles: Dict[str, int]) -> Optional[int]:
+    try:
+        return int(token, 0)
+    except ValueError:
+        key = token.strip().upper()
+        if key.startswith("TILE_"):
+            key = key[5:]
+        return tset_tiles.get(key)
+
+
 def parse_lvltext(path: str, errors: ErrorCollector) -> Optional[LevelDef]:
     try:
         with open(path, "r", encoding="utf-8") as f:
             raw_lines = f.readlines()
     except FileNotFoundError:
-        errors.add_error(f"Input file not found: {path}")
+        errors.add_error(f"Input file not found", file=path, line=1, col=1)
         return None
     except PermissionError:
-        errors.add_error(f"Permission denied reading file: {path}")
+        errors.add_error("Permission denied reading file", file=path, line=1, col=1)
         return None
     except UnicodeDecodeError as e:
-        errors.add_error(f"File encoding error: {e}")
+        errors.add_error(f"File encoding error: {e}", file=path, line=1, col=1)
         return None
     except Exception as e:
-        errors.add_error(f"Error reading file: {e}")
+        errors.add_error(f"Error reading file: {e}", file=path, line=1, col=1)
         return None
 
-    lines: List[str] = []
-    for ln in raw_lines:
+    lines: List[Tuple[int, str]] = []
+    for idx, ln in enumerate(raw_lines, 1):
         s = _strip_comment(ln)
         if s.strip():
-            lines.append(s)
+            lines.append((idx, s))
+
+    def err(msg: str, line_no: Optional[int] = None, col: int = 1):
+        errors.add_error(msg, file=path, line=line_no or 1, col=col)
 
     level: Optional[LevelDef] = None
+    tset_tiles: Dict[str, int] = {}
+    tset_charmap: Dict[str, int] = {}
+    tset_objects: Dict[str, dict] = {}
+    saw_tiles_section = False
     cur_room: Optional[RoomDef] = None
     mode: Optional[str] = None
     cur_script: Optional[ScriptDef] = None
@@ -305,7 +363,8 @@ def parse_lvltext(path: str, errors: ErrorCollector) -> Optional[LevelDef]:
 
     i = 0
     while i < len(lines):
-        line = lines[i].strip()
+        line_no, raw_line = lines[i]
+        line = raw_line.strip()
         i += 1
 
         if line == "END":
@@ -320,7 +379,7 @@ def parse_lvltext(path: str, errors: ErrorCollector) -> Optional[LevelDef]:
 
         if line == "ENDROOM":
             if not level or not cur_room:
-                errors.add_error("ENDROOM without ROOM")
+                err("ENDROOM without ROOM", line_no, _col_for_token(raw_line, "ENDROOM"))
                 continue
             level.rooms[cur_room.room_id] = cur_room
             cur_room = None
@@ -328,14 +387,14 @@ def parse_lvltext(path: str, errors: ErrorCollector) -> Optional[LevelDef]:
             continue
 
         if cur_script is not None:
-            cur_script.lines.append(line)
+            cur_script.lines.append((line_no, line))
             continue
 
         if mode == "MAP":
             if not cur_room:
-                errors.add_error("MAP outside ROOM")
+                err("MAP outside ROOM", line_no, _col_for_token(raw_line, "MAP"))
                 continue
-            cur_room.map_lines.append(line)
+            cur_room.map_lines.append((line_no, line))
             continue
 
         parts = line.split()
@@ -347,23 +406,34 @@ def parse_lvltext(path: str, errors: ErrorCollector) -> Optional[LevelDef]:
             level_found = True
             kv = _parse_kv(line)
             if "w" not in kv or "h" not in kv or "start" not in kv:
-                errors.add_error("LEVEL requires w=, h=, start=R?:S?")
+                err("LEVEL requires w=, h=, start=R?:S?", line_no, _col_for_token(raw_line, "LEVEL"))
                 continue
             try:
                 start_room, start_spawn = kv["start"].split(":")
+                if "tset" in kv:
+                    tset_path = kv["tset"]
+                    if not os.path.isabs(tset_path):
+                        tset_path = os.path.join(os.path.dirname(path), tset_path)
+                    tset_tiles, tset_charmap, tset_objects = _load_tset_tiles(tset_path, errors)
                 level = LevelDef(
                     name=kv.get("name", "UNNAMED"),
                     w=int(kv["w"]),
                     h=int(kv["h"]),
                     start_room=start_room,
                     start_spawn=start_spawn,
+                    line_no=line_no,
                 )
+                level.object_stamps = {
+                    obj["char"]: obj
+                    for obj in tset_objects.values()
+                    if obj.get("char")
+                }
             except ValueError as e:
-                errors.add_error(f"Invalid LEVEL values: {e}")
+                err(f"Invalid LEVEL values: {e}", line_no, _col_for_token(raw_line, "LEVEL"))
             continue
 
         if not level_found:
-            errors.add_error(f"Expected LEVEL block, found: {line}")
+            err(f"Expected LEVEL block, found: {line}", line_no, _col_for_token(raw_line, line.split()[0]))
             # Don't break - continue parsing to find more errors
             continue
 
@@ -377,102 +447,138 @@ def parse_lvltext(path: str, errors: ErrorCollector) -> Optional[LevelDef]:
 
         if head == "COND":
             if len(parts) < 2:
-                errors.add_error(f"COND missing name: {line}")
+                err(f"COND missing name: {line}", line_no, _col_for_token(raw_line, "COND"))
+                continue
+            if parts[1] in level.conds:
+                err(f"Duplicate COND: {parts[1]}", line_no, _col_for_token(raw_line, parts[1]))
                 continue
             cur_script = ScriptDef(name=parts[1], kind="COND")
             continue
 
         if head == "ACT":
             if len(parts) < 2:
-                errors.add_error(f"ACT missing name: {line}")
+                err(f"ACT missing name: {line}", line_no, _col_for_token(raw_line, "ACT"))
+                continue
+            if parts[1] in level.acts:
+                err(f"Duplicate ACT: {parts[1]}", line_no, _col_for_token(raw_line, parts[1]))
                 continue
             cur_script = ScriptDef(name=parts[1], kind="ACT")
             continue
 
         if head == "ROOM":
             if len(parts) < 2:
-                errors.add_error(f"ROOM missing id: {line}")
+                err(f"ROOM missing id: {line}", line_no, _col_for_token(raw_line, "ROOM"))
                 continue
             kv = _parse_kv(line)
             rid = parts[1]
-            cur_room = RoomDef(room_id=rid, name=kv.get("name", rid))
+            if rid in level.rooms:
+                err(f"Duplicate ROOM: {rid}", line_no, _col_for_token(raw_line, rid))
+                continue
+            cur_room = RoomDef(room_id=rid, name=kv.get("name", rid), line_no=line_no)
             mode = None
             continue
 
         if head in ("SPAWNS", "EXITS", "OBJECTS", "MAP"):
             if not cur_room:
-                errors.add_error(f"{head} outside ROOM")
+                err(f"{head} outside ROOM", line_no, _col_for_token(raw_line, head))
                 continue
             mode = head
             continue
 
         # --- Mode handlers ---
         if mode == "TILES":
+            saw_tiles_section = True
             ch = parts[0]
             if len(ch) != 1:
-                errors.add_error(f"TILES key must be a single char: {ch}")
+                err(f"TILES key must be a single char: {ch}", line_no, _col_for_token(raw_line, ch))
                 continue
-            try:
-                level.tiles[ch] = int(parts[1], 0)
-            except ValueError:
-                errors.add_error(f"TILES invalid value for '{ch}': {parts[1]}")
+            tile_id = _resolve_tile_id(parts[1], tset_tiles)
+            if tile_id is None:
+                if tset_tiles:
+                    err(f"TILES unknown tile name for '{ch}': {parts[1]}", line_no, _col_for_token(raw_line, parts[1]))
+                else:
+                    err(
+                        f"TILES invalid value for '{ch}': {parts[1]} (add LEVEL tset=... to use names)",
+                        line_no,
+                        _col_for_token(raw_line, parts[1]),
+                    )
+                continue
+            level.tiles[ch] = tile_id
             continue
 
         if mode == "FLAGS":
+            if parts[0] in level.flags:
+                err(f"Duplicate FLAG: {parts[0]}", line_no, _col_for_token(raw_line, parts[0]))
+                continue
             level.flags.append(parts[0])
             continue
 
         if mode == "VARS":
+            if parts[0] in level.vars:
+                err(f"Duplicate VAR: {parts[0]}", line_no, _col_for_token(raw_line, parts[0]))
+                continue
             level.vars.append(parts[0])
             continue
 
         if mode == "ITEMS":
+            if parts[0] in level.items:
+                err(f"Duplicate ITEM: {parts[0]}", line_no, _col_for_token(raw_line, parts[0]))
+                continue
             level.items.append(parts[0])
             continue
 
         if mode == "MESSAGES":
             m = re.match(r'^(\w+)\s*=\s*"(.*)"$', line)
             if not m:
-                errors.add_error(f"Bad message line: {line}")
+                err(f"Bad message line: {line}", line_no, _col_for_token(raw_line, line.split()[0]))
+                continue
+            if m.group(1) in level.messages:
+                err(f"Duplicate MESSAGE: {m.group(1)}", line_no, _col_for_token(raw_line, m.group(1)))
                 continue
             level.messages[m.group(1)] = m.group(2)
             continue
 
         if mode == "SPAWNS":
             if len(parts) < 2:
-                errors.add_error(f"SPAWNS line missing position: {line}")
+                err(f"SPAWNS line missing position: {line}", line_no, _col_for_token(raw_line, "SPAWNS"))
                 continue
             sid = parts[0]
+            if sid in cur_room.spawns:
+                err(f"Duplicate SPAWN: {sid}", line_no, _col_for_token(raw_line, sid))
+                continue
             try:
                 x, y = parts[1].split(",")
-                cur_room.spawns[sid] = (int(x), int(y))
+                cur_room.spawns[sid] = (int(x), int(y), line_no)
             except ValueError:
-                errors.add_error(f"SPAWNS invalid position for '{sid}': {parts[1]}")
+                err(f"SPAWNS invalid position for '{sid}': {parts[1]}", line_no)
             continue
 
         if mode == "EXITS":
             if len(parts) < 2:
-                errors.add_error(f"EXITS line missing destination: {line}")
+                err(f"EXITS line missing destination: {line}", line_no, _col_for_token(raw_line, "EXITS"))
                 continue
             edge = parts[0]
             try:
                 dest_room, dest_spawn = parts[1].split(":")
-                cur_room.exits.append((edge, dest_room, dest_spawn))
+                cur_room.exits.append((edge, dest_room, dest_spawn, line_no))
             except ValueError:
-                errors.add_error(f"EXITS invalid destination format: {parts[1]}")
+                err(f"EXITS invalid destination format: {parts[1]}", line_no)
             continue
 
         if mode == "OBJECTS":
             # O1 at 3,2 type=SIGN verbs=LOOK|OPERATE look=... cond=...
             if len(parts) < 4 or parts[1] != "at":
-                errors.add_error(f"Bad OBJECT line: {line}")
+                err(f"Bad OBJECT line: {line}", line_no, _col_for_token(raw_line, parts[0] if parts else ""))
                 continue
 
             oname = parts[0]
+            if any(obj.name == oname for obj in cur_room.objects):
+                err(f"Duplicate OBJECT: {oname}", line_no, _col_for_token(raw_line, oname))
+                continue
             try:
                 x_str, y_str = parts[2].split(",")
             except ValueError:
-                errors.add_error(f"Bad OBJECT position in line: {line}")
+                err(f"Bad OBJECT position in line: {line}", line_no)
                 continue
 
             kv = _parse_kv(line)
@@ -480,14 +586,14 @@ def parse_lvltext(path: str, errors: ErrorCollector) -> Optional[LevelDef]:
             type_name = kv.get("type", "")
             verbs_str = kv.get("verbs", "")
             if not type_name or not verbs_str:
-                errors.add_error(f"Object missing type/verbs: {line}")
+                err(f"Object missing type/verbs: {line}", line_no, _col_for_token(raw_line, "type"))
                 continue
 
             verbs = 0
             for v in verbs_str.split("|"):
                 v = v.strip().upper()
                 if v not in VERB_BITS:
-                    errors.add_error(f"Unknown verb {v} in {line}")
+                    err(f"Unknown verb {v} in {line}", line_no, _col_for_token(raw_line, v))
                     continue
                 verbs |= VERB_BITS[v]
 
@@ -498,9 +604,10 @@ def parse_lvltext(path: str, errors: ErrorCollector) -> Optional[LevelDef]:
                     y=int(y_str),
                     type_name=type_name,
                     verbs=verbs,
+                    line_no=line_no,
                 )
             except ValueError:
-                errors.add_error(f"Invalid OBJECT coordinates for '{oname}': {x_str},{y_str}")
+                err(f"Invalid OBJECT coordinates for '{oname}': {x_str},{y_str}", line_no)
                 continue
 
             obj.cond_name = kv.get("cond", "ALWAYS")
@@ -548,24 +655,30 @@ def parse_lvltext(path: str, errors: ErrorCollector) -> Optional[LevelDef]:
             cur_room.objects.append(obj)
             continue
 
-        errors.add_error(f"Unexpected line: {line}")
+        err(f"Unexpected line: {line}", line_no, 1)
 
     if level is None:
-        errors.add_error("No LEVEL block found")
+        err("No LEVEL block found", 1)
         # Create a minimal level structure so compilation can still run and find more errors
         level = LevelDef(
             name="INVALID_LEVEL",
             w=1, h=1,
             start_room="R0",
-            start_spawn="S0"
+            start_spawn="S0",
+            line_no=1,
         )
+    else:
+        if not saw_tiles_section and tset_charmap:
+            level.tiles = dict(tset_charmap)
+        elif not saw_tiles_section and not tset_charmap:
+            err("No TILES section and no CHARMAP found in tset", level.line_no)
 
     # Don't return None here - let compilation run to find more errors
     # The error collector will handle reporting all errors at the end
 
     # Ensure default ALWAYS condition exists
     if "ALWAYS" not in level.conds:
-        level.conds["ALWAYS"] = ScriptDef(name="ALWAYS", kind="COND", lines=["TRUE"])
+        level.conds["ALWAYS"] = ScriptDef(name="ALWAYS", kind="COND", lines=[(level.line_no, "TRUE")])
 
     return level
 
@@ -585,7 +698,7 @@ def _ascii_bytes(s: str) -> bytes:
 
 
 def _pack_enum_header(name: str, entries: List[str]) -> str:
-    out = [f"typedef enum {name} : unsigned char {{\n"]
+    out = ["typedef enum {\n"]
     for idx, e in enumerate(entries):
         out.append(f"  {e} = {idx},\n")
     out.append(f"  {name}__COUNT = {len(entries)}\n")
@@ -593,10 +706,16 @@ def _pack_enum_header(name: str, entries: List[str]) -> str:
     return "".join(out)
 
 
-def _resolve_id(name: str, table: Dict[str, int], kind: str, errors: Optional[ErrorCollector] = None) -> int:
+def _resolve_id(
+    name: str,
+    table: Dict[str, int],
+    kind: str,
+    errors: Optional[ErrorCollector] = None,
+    line_no: Optional[int] = None,
+) -> int:
     if name not in table:
         if errors:
-            errors.add_error(f"Unknown {kind} id: {name}")
+            errors.add_error(f"Unknown {kind} id: {name}", line=line_no)
             return 0  # Return a safe default
         else:
             # For backwards compatibility when no error collector is provided
@@ -605,43 +724,63 @@ def _resolve_id(name: str, table: Dict[str, int], kind: str, errors: Optional[Er
 
 
 def compile_cond_script(
-    lines: List[str],
+    lines: List[Tuple[int, str]],
     flag_ids: Dict[str, int],
     var_ids: Dict[str, int],
     item_ids: Dict[str, int],
     errors: ErrorCollector,
 ) -> bytes:
     b = bytearray()
-    for raw in lines:
+    for line_no, raw in lines:
         parts = raw.strip().split()
         if not parts:
             continue
         op = parts[0].upper()
         if op not in COND_OPS:
-            errors.add_error(f"Unknown COND op: {op}")
+            errors.add_error(
+                f"Unknown COND op: {op}",
+                line=line_no,
+                col=_col_for_token(raw, parts[0]),
+            )
             continue
         code = COND_OPS[op]
         a = 0
         c = 0
         if code in (C_FLAG_SET, C_FLAG_CLR):
             if len(parts) < 2:
-                errors.add_error(f"COND op {op} requires a flag name")
+                errors.add_error(
+                    f"COND op {op} requires a flag name",
+                    line=line_no,
+                    col=_col_for_token(raw, op),
+                )
                 continue
-            a = _resolve_id(parts[1], flag_ids, "FLAG", errors)
+            a = _resolve_id(parts[1], flag_ids, "FLAG", errors, line_no)
         elif code == C_HAS_ITEM:
             if len(parts) < 2:
-                errors.add_error(f"COND op {op} requires an item name")
+                errors.add_error(
+                    f"COND op {op} requires an item name",
+                    line=line_no,
+                    col=_col_for_token(raw, op),
+                )
                 continue
-            a = _resolve_id(parts[1], item_ids, "ITEM", errors)
+            a = _resolve_id(parts[1], item_ids, "ITEM", errors, line_no)
         elif code == C_VAR_EQ:
             if len(parts) < 3:
-                errors.add_error(f"COND op {op} requires a var name and value")
+                errors.add_error(
+                    f"COND op {op} requires a var name and value",
+                    line=line_no,
+                    col=_col_for_token(raw, op),
+                )
                 continue
-            a = _resolve_id(parts[1], var_ids, "VAR", errors)
+            a = _resolve_id(parts[1], var_ids, "VAR", errors, line_no)
             try:
                 c = int(parts[2], 0) & 0xFF
             except ValueError:
-                errors.add_error(f"COND op {op} has invalid value: {parts[2]}")
+                errors.add_error(
+                    f"COND op {op} has invalid value: {parts[2]}",
+                    line=line_no,
+                    col=_col_for_token(raw, parts[2]),
+                )
         elif code == C_TRUE:
             pass
         elif code == C_END:
@@ -652,7 +791,7 @@ def compile_cond_script(
 
 
 def compile_act_script(
-    lines: List[str],
+    lines: List[Tuple[int, str]],
     msg_ids: Dict[str, int],
     flag_ids: Dict[str, int],
     var_ids: Dict[str, int],
@@ -662,13 +801,17 @@ def compile_act_script(
     errors: ErrorCollector,
 ) -> bytes:
     b = bytearray()
-    for raw in lines:
+    for line_no, raw in lines:
         parts = raw.strip().split()
         if not parts:
             continue
         op = parts[0].upper()
         if op not in ACT_OPS:
-            errors.add_error(f"Unknown ACT op: {op}")
+            errors.add_error(
+                f"Unknown ACT op: {op}",
+                line=line_no,
+                col=_col_for_token(raw, parts[0]),
+            )
             continue
         code = ACT_OPS[op]
         a = 0
@@ -676,49 +819,83 @@ def compile_act_script(
 
         if code == A_SHOW_MSG:
             if len(parts) < 2:
-                errors.add_error(f"ACT op {op} requires a message name")
+                errors.add_error(
+                    f"ACT op {op} requires a message name",
+                    line=line_no,
+                    col=_col_for_token(raw, op),
+                )
                 continue
-            a = _resolve_id(parts[1], msg_ids, "MSG", errors)
+            a = _resolve_id(parts[1], msg_ids, "MSG", errors, line_no)
         elif code in (A_SET_FLAG, A_CLR_FLAG):
             if len(parts) < 2:
-                errors.add_error(f"ACT op {op} requires a flag name")
+                errors.add_error(
+                    f"ACT op {op} requires a flag name",
+                    line=line_no,
+                    col=_col_for_token(raw, op),
+                )
                 continue
-            a = _resolve_id(parts[1], flag_ids, "FLAG", errors)
+            a = _resolve_id(parts[1], flag_ids, "FLAG", errors, line_no)
         elif code in (A_GIVE_ITEM, A_TAKE_ITEM):
             if len(parts) < 2:
-                errors.add_error(f"ACT op {op} requires an item name")
+                errors.add_error(
+                    f"ACT op {op} requires an item name",
+                    line=line_no,
+                    col=_col_for_token(raw, op),
+                )
                 continue
-            a = _resolve_id(parts[1], item_ids, "ITEM", errors)
+            a = _resolve_id(parts[1], item_ids, "ITEM", errors, line_no)
         elif code == A_SET_VAR:
             if len(parts) < 3:
-                errors.add_error(f"ACT op {op} requires a var name and value")
+                errors.add_error(
+                    f"ACT op {op} requires a var name and value",
+                    line=line_no,
+                    col=_col_for_token(raw, op),
+                )
                 continue
-            a = _resolve_id(parts[1], var_ids, "VAR", errors)
+            a = _resolve_id(parts[1], var_ids, "VAR", errors, line_no)
             try:
                 c = int(parts[2], 0) & 0xFF
             except ValueError:
-                errors.add_error(f"ACT op {op} has invalid value: {parts[2]}")
+                errors.add_error(
+                    f"ACT op {op} has invalid value: {parts[2]}",
+                    line=line_no,
+                    col=_col_for_token(raw, parts[2]),
+                )
         elif code == A_SFX:
             if len(parts) < 2:
-                errors.add_error(f"ACT op {op} requires a sound id")
+                errors.add_error(
+                    f"ACT op {op} requires a sound id",
+                    line=line_no,
+                    col=_col_for_token(raw, op),
+                )
                 continue
             try:
                 a = int(parts[1], 0) & 0xFF
             except ValueError:
-                errors.add_error(f"ACT op {op} has invalid sound id: {parts[1]}")
+                errors.add_error(
+                    f"ACT op {op} has invalid sound id: {parts[1]}",
+                    line=line_no,
+                    col=_col_for_token(raw, parts[1]),
+                )
         elif code == A_TRANSITION:
             if len(parts) < 3:
-                errors.add_error(f"ACT op {op} requires room and spawn")
+                errors.add_error(
+                    f"ACT op {op} requires room and spawn",
+                    line=line_no,
+                    col=_col_for_token(raw, op),
+                )
                 continue
             dest_room = parts[1]
             dest_spawn = parts[2]
-            a = _resolve_id(dest_room, room_ids, "ROOM", errors)
+            a = _resolve_id(dest_room, room_ids, "ROOM", errors, line_no)
             if (
                 dest_room not in spawn_ids_by_room
                 or dest_spawn not in spawn_ids_by_room[dest_room]
             ):
                 errors.add_error(
-                    f"Unknown spawn {dest_spawn} in room {dest_room} for TRANSITION"
+                    f"Unknown spawn {dest_spawn} in room {dest_room} for TRANSITION",
+                    line=line_no,
+                    col=_col_for_token(raw, dest_spawn),
                 )
             else:
                 c = spawn_ids_by_room[dest_room][dest_spawn] & 0xFF
@@ -738,24 +915,22 @@ def compile_act_script(
 def blob_to_c_array(blob: bytes, array_name: str) -> str:
     # 12 bytes per line is readable
     lines: List[str] = []
-    lines.append(f"const uint8_t {array_name}[] = {{\n")
+    lines.append(f"const unsigned char {array_name}[] = {{\n")
     for i in range(0, len(blob), 12):
         chunk = blob[i : i + 12]
         hexes = ",".join(f"0x{b:02X}" for b in chunk)
         lines.append(f"  {hexes},\n")
     lines.append("};\n")
-    lines.append(
-        f"const uint32_t {array_name}_size = (uint32_t)sizeof({array_name});\n"
-    )
+    lines.append(f"const unsigned long {array_name}_size = (unsigned long)sizeof({array_name});\n")
     return "".join(lines)
 
 
 def blob_to_c_embed(bin_path: str, array_name: str) -> str:
     return (
-        f"const uint8_t {array_name}[] = {{\n"
+        f"const unsigned char {array_name}[] = {{\n"
         f"#embed \"{bin_path}\"\n"
         f"}};\n"
-        f"const uint32_t {array_name}_size = (uint32_t)sizeof({array_name});\n"
+        f"const unsigned long {array_name}_size = (unsigned long)sizeof({array_name});\n"
     )
 
 
@@ -763,9 +938,8 @@ def make_blob_h(array_name: str) -> str:
     guard = array_name.upper() + "_H"
     return (
         f"#pragma once\n"
-        f"#include <stdint.h>\n\n"
-        f"extern const uint8_t {array_name}[];\n"
-        f"extern const uint32_t {array_name}_size;\n"
+        f"extern const unsigned char {array_name}[];\n"
+        f"extern const unsigned long {array_name}_size;\n"
     )
 
 
@@ -1057,19 +1231,19 @@ def compile_level(level: LevelDef, errors: ErrorCollector) -> Tuple[Optional[byt
             errors,
         )
 
-    def act_offset(name: str) -> int:
+    def act_offset(name: str, line_no: Optional[int] = None) -> int:
         if not name:
             return 0
         if name not in act_ofs:
-            errors.add_error(f"Unknown ACT script: {name}")
+            errors.add_error(f"Unknown ACT script: {name}", line=line_no)
             return 0  # Return safe default
         return act_ofs[name]
 
-    def cond_offset(name: str) -> int:
+    def cond_offset(name: str, line_no: Optional[int] = None) -> int:
         if not name:
             return 0
         if name not in cond_ofs:
-            errors.add_error(f"Unknown COND script: {name}")
+            errors.add_error(f"Unknown COND script: {name}", line=line_no)
             return 0  # Return safe default
         return cond_ofs[name]
 
@@ -1095,7 +1269,7 @@ def compile_level(level: LevelDef, errors: ErrorCollector) -> Tuple[Optional[byt
             "ofs_spawns": 0,
             "spawn_keys": list(room.spawns.keys()),
             "ofs_exits": 0,
-            "exits": list(room.exits),
+            "exits": [(e, dr, ds) for (e, dr, ds, _ln) in room.exits],
             "ofs_objects": 0,
             "objects": [],
         }
@@ -1103,23 +1277,94 @@ def compile_level(level: LevelDef, errors: ErrorCollector) -> Tuple[Optional[byt
         # Map
         if len(room.map_lines) != level.h:
             errors.add_error(
-                f"{rid}: MAP has {len(room.map_lines)} lines, expected {level.h}"
+                f"{rid}: MAP has {len(room.map_lines)} lines, expected {level.h}",
+                line=room.line_no,
             )
         map_bytes = bytearray()
-        for y, row in enumerate(room.map_lines):
+        grid: List[List[str]] = []
+        line_nos: List[int] = []
+        for y, (map_line_no, row) in enumerate(room.map_lines):
             if len(row) != level.w:
                 errors.add_error(
-                    f"{rid}: MAP line {y} length {len(row)}, expected {level.w}"
+                    f"{rid}: MAP line {y} length {len(row)}, expected {level.w}",
+                    line=map_line_no,
                 )
                 continue
-            for ch in row:
+            grid.append(list(row))
+            line_nos.append(map_line_no)
+
+        tile_grid: List[List[Optional[int]]] = [[None for _ in range(level.w)] for _ in range(level.h)]
+        object_stamps = level.object_stamps or {}
+
+        for y in range(level.h):
+            if y >= len(grid):
+                continue
+            for x in range(level.w):
+                if tile_grid[y][x] is not None:
+                    continue
+                ch = grid[y][x]
+                if ch in object_stamps:
+                    spec = object_stamps[ch]
+                    ow = spec["w"]
+                    oh = spec["h"]
+                    if ch in level.tiles:
+                        errors.add_error(
+                            f"{rid}: MAP char '{ch}' is both a tile and an object stamp",
+                            line=line_nos[y],
+                        )
+                    if x + ow > level.w or y + oh > level.h:
+                        errors.add_error(
+                            f"{rid}: OBJECT stamp '{ch}' out of bounds at {x},{y}",
+                            line=line_nos[y],
+                        )
+                        continue
+                    # Validate block and fill
+                    for dy in range(oh):
+                        for dx in range(ow):
+                            ty = y + dy
+                            tx = x + dx
+                            if ty >= len(grid):
+                                continue
+                            if grid[ty][tx] != ch:
+                                errors.add_error(
+                                    f"{rid}: OBJECT stamp '{ch}' is not a solid {ow}x{oh} block at {x},{y}",
+                                    line=line_nos[ty],
+                                )
+                    tiles = spec["tiles"]
+                    for dy in range(oh):
+                        for dx in range(ow):
+                            ty = y + dy
+                            tx = x + dx
+                            if ty >= level.h or tx >= level.w:
+                                continue
+                            if tile_grid[ty][tx] is not None:
+                                errors.add_error(
+                                    f"{rid}: OBJECT stamp '{ch}' overlaps another tile at {tx},{ty}",
+                                    line=line_nos[ty],
+                                )
+                                continue
+                            tile_grid[ty][tx] = tiles[dy * ow + dx]
+                    continue
+
                 if ch not in level.tiles:
                     errors.add_error(
-                        f"{rid}: MAP uses char '{ch}' with no TILES mapping"
+                        f"{rid}: MAP uses char '{ch}' with no TILES mapping",
+                        line=line_nos[y] if y < len(line_nos) else room.line_no,
                     )
-                    map_bytes.append(0)  # Safe fallback value
+                    tile_grid[y][x] = 0
                 else:
-                    map_bytes.append(level.tiles[ch] & 0xFF)
+                    tile_grid[y][x] = level.tiles[ch] & 0xFF
+
+        for y in range(level.h):
+            for x in range(level.w):
+                tid = tile_grid[y][x]
+                if tid is None:
+                    errors.add_error(
+                        f"{rid}: MAP unresolved tile at {x},{y}",
+                        line=line_nos[y] if y < len(line_nos) else room.line_no,
+                    )
+                    tid = 0
+                map_bytes.append(tid & 0xFF)
 
         ofs_map = len(blob)
         room_sym_entry["ofs_map"] = ofs_map
@@ -1132,7 +1377,7 @@ def compile_level(level: LevelDef, errors: ErrorCollector) -> Tuple[Optional[byt
         spawn_keys = list(room.spawns.keys())
         blob.append(len(spawn_keys) & 0xFF)
         for sid in spawn_keys:
-            x, y = room.spawns[sid]
+            x, y, _line_no = room.spawns[sid]
             blob += bytes([x & 0xFF, y & 0xFF])
 
         # Exits
@@ -1140,16 +1385,17 @@ def compile_level(level: LevelDef, errors: ErrorCollector) -> Tuple[Optional[byt
         room_sym_entry["ofs_exits"] = ofs_exits
 
         blob.append(len(room.exits) & 0xFF)
-        for edge, dest_room, dest_spawn in room.exits:
+        for edge, dest_room, dest_spawn, line_no in room.exits:
             if edge not in EXIT_TYPES:
-                errors.add_error(f"{rid}: bad exit edge {edge}")
+                errors.add_error(f"{rid}: bad exit edge {edge}", line=line_no)
                 continue
             if dest_room not in room_ids:
-                errors.add_error(f"{rid}: exit dest room unknown {dest_room}")
+                errors.add_error(f"{rid}: exit dest room unknown {dest_room}", line=line_no)
                 continue
             if dest_spawn not in spawn_ids_by_room[dest_room]:
                 errors.add_error(
-                    f"{rid}: exit dest spawn unknown {dest_room}:{dest_spawn}"
+                    f"{rid}: exit dest spawn unknown {dest_room}:{dest_spawn}",
+                    line=line_no,
                 )
                 continue
             blob += bytes(
@@ -1168,7 +1414,7 @@ def compile_level(level: LevelDef, errors: ErrorCollector) -> Tuple[Optional[byt
 
         for obj in room.objects:
             if obj.type_name not in OBJ_TYPES:
-                errors.add_error(f"{rid}: unknown object type {obj.type_name}")
+                errors.add_error(f"{rid}: unknown object type {obj.type_name}", line=obj.line_no)
                 continue
             otype = OBJ_TYPES[obj.type_name]
 
@@ -1177,49 +1423,49 @@ def compile_level(level: LevelDef, errors: ErrorCollector) -> Tuple[Optional[byt
                 p0 = int(obj.props.get("p0", "0"), 0) & 0xFF
                 p1 = int(obj.props.get("p1", "0"), 0) & 0xFF
             except ValueError:
-                errors.add_error(f"{rid}: invalid p0/p1 values for object {obj.name}")
+                errors.add_error(f"{rid}: invalid p0/p1 values for object {obj.name}", line=obj.line_no)
                 p0, p1 = 0, 0
 
             # PICKUP item= -> p0=itemId
             if obj.type_name == "PICKUP" and "item" in obj.props:
-                p0 = _resolve_id(obj.props["item"], item_ids, "ITEM", errors) & 0xFF
+                p0 = _resolve_id(obj.props["item"], item_ids, "ITEM", errors, obj.line_no) & 0xFF
 
             # LOCKER_KEYPAD code=729 -> p0=7, p1=29
             if obj.type_name == "LOCKER_KEYPAD" and "code" in obj.props:
                 try:
                     code = int(obj.props["code"], 10)
                     if not (0 <= code <= 999):
-                        errors.add_error(f"{rid}: keypad code out of range 0..999")
+                        errors.add_error(f"{rid}: keypad code out of range 0..999", line=obj.line_no)
                     else:
                         p0 = (code // 100) & 0xFF
                         p1 = (code % 100) & 0xFF
                 except ValueError:
-                    errors.add_error(f"{rid}: invalid keypad code: {obj.props['code']}")
+                    errors.add_error(f"{rid}: invalid keypad code: {obj.props['code']}", line=obj.line_no)
 
             # BREAKER_PANEL var=VARNAME -> p0=varId; expect=0b101 -> p1 expected bits (0..7)
             if obj.type_name == "BREAKER_PANEL":
                 if "var" in obj.props:
-                    p0 = _resolve_id(obj.props["var"], var_ids, "VAR", errors) & 0xFF
+                    p0 = _resolve_id(obj.props["var"], var_ids, "VAR", errors, obj.line_no) & 0xFF
                 if "expect" in obj.props:
                     try:
                         exp = int(obj.props["expect"], 0)
                         if not (0 <= exp <= 7):
-                            errors.add_error(f"{rid}: breaker expect must be 0..7")
+                            errors.add_error(f"{rid}: breaker expect must be 0..7", line=obj.line_no)
                         else:
                             p1 = exp & 0xFF
                     except ValueError:
-                        errors.add_error(f"{rid}: invalid breaker expect value: {obj.props['expect']}")
+                        errors.add_error(f"{rid}: invalid breaker expect value: {obj.props['expect']}", line=obj.line_no)
 
-            ofs_conds = cond_offset(obj.cond_name)
+            ofs_conds = cond_offset(obj.cond_name, obj.line_no)
 
-            ofs_look = act_offset(obj.look)
-            ofs_take = act_offset(obj.take)
-            ofs_use = act_offset(obj.use)
-            ofs_talk = act_offset(obj.talk)
-            ofs_op = act_offset(obj.operate)
+            ofs_look = act_offset(obj.look, obj.line_no)
+            ofs_take = act_offset(obj.take, obj.line_no)
+            ofs_use = act_offset(obj.use, obj.line_no)
+            ofs_talk = act_offset(obj.talk, obj.line_no)
+            ofs_op = act_offset(obj.operate, obj.line_no)
 
-            ofs_alt0 = act_offset(obj.alt0)
-            ofs_alt1 = act_offset(obj.alt1)
+            ofs_alt0 = act_offset(obj.alt0, obj.line_no)
+            ofs_alt1 = act_offset(obj.alt1, obj.line_no)
 
             # Emit object record
             blob += bytes(
@@ -1298,12 +1544,15 @@ def compile_level(level: LevelDef, errors: ErrorCollector) -> Tuple[Optional[byt
         )
 
     # Patch header
-    start_room_idx = _resolve_id(level.start_room, room_ids, "ROOM", errors)
+    start_room_idx = _resolve_id(level.start_room, room_ids, "ROOM", errors, level.line_no)
     if (
         level.start_room not in spawn_ids_by_room
         or level.start_spawn not in spawn_ids_by_room[level.start_room]
     ):
-        errors.add_error(f"Start spawn unknown: {level.start_room}:{level.start_spawn}")
+        errors.add_error(
+            f"Start spawn unknown: {level.start_room}:{level.start_spawn}",
+            line=level.line_no,
+        )
         start_spawn_idx = 0  # Safe fallback
     else:
         start_spawn_idx = spawn_ids_by_room[level.start_room][level.start_spawn]
@@ -1331,7 +1580,8 @@ def compile_level(level: LevelDef, errors: ErrorCollector) -> Tuple[Optional[byt
     )
     if len(header) != HEADER_SIZE:
         errors.add_error(
-            f"Internal error: Header pack size mismatch: {len(header)} != {HEADER_SIZE}"
+            f"Internal error: Header pack size mismatch: {len(header)} != {HEADER_SIZE}",
+            line=1,
         )
         # Create minimal header anyway and continue error collection
         header = b'\x00' * HEADER_SIZE
@@ -1344,7 +1594,7 @@ def compile_level(level: LevelDef, errors: ErrorCollector) -> Tuple[Optional[byt
     header_c.append(_pack_enum_header("VarId", level.vars))
     header_c.append(_pack_enum_header("ItemId", level.items))
     header_c.append(_pack_enum_header("MsgId", msg_names))
-    header_c.append("typedef enum ObjType : unsigned char {\n")
+    header_c.append("typedef enum {\n")
     for k, v in OBJ_TYPES.items():
         header_c.append(f"  OBJ_{k} = {v},\n")
     header_c.append("} ObjType;\n\n")
@@ -1390,22 +1640,22 @@ def main():
     ap.add_argument("-o", "--output", default="", help="Output binary (.bin)")
     ap.add_argument(
         "--out-assets",
-        default="assets/levels",
+        default=os.path.join(GEN_ROOT, "assets", "levels"),
         help="Output directory for .bin blobs",
     )
     ap.add_argument(
         "--out-src",
-        default="src/levels",
+        default=os.path.join(GEN_ROOT, "src", "levels"),
         help="Output directory for generated .c blobs",
     )
     ap.add_argument(
         "--out-include",
-        default="include/levels",
+        default=os.path.join(GEN_ROOT, "include", "levels"),
         help="Output directory for generated headers (.h)",
     )
     ap.add_argument(
         "--out-debug",
-        default="build/levels",
+        default=os.path.join(ANALYSIS_ROOT, "levels"),
         help="Output directory for .sym and .json",
     )
 
@@ -1426,9 +1676,10 @@ def main():
     )
 
     args = ap.parse_args()
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
     # Create error collector
-    errors = ErrorCollector()
+    errors = ErrorCollector(default_file=args.input)
 
     # Parse input file
     level = parse_lvltext(args.input, errors)
@@ -1436,16 +1687,25 @@ def main():
     # Don't exit after parsing errors - continue to compilation to find more errors
     if level is None:
         # If parsing completely failed, we can't continue
-        errors.report_and_exit("Parsing failed completely: ")
+        errors.report_and_exit()
 
     # Compile the level (may add more errors)
     blob, ids_h, debug = compile_level(level, errors)
 
     # Report ALL errors (both parsing and compilation) together
-    errors.report_and_exit("Found errors: ")
+    errors.report_and_exit()
 
     base_name = sanitize_level_name(level.name)
     c_ident = make_c_identifier(base_name)
+
+    if not os.path.isabs(args.out_assets):
+        args.out_assets = os.path.join(project_root, args.out_assets)
+    if not os.path.isabs(args.out_src):
+        args.out_src = os.path.join(project_root, args.out_src)
+    if not os.path.isabs(args.out_include):
+        args.out_include = os.path.join(project_root, args.out_include)
+    if not os.path.isabs(args.out_debug):
+        args.out_debug = os.path.join(project_root, args.out_debug)
 
     os.makedirs(args.out_assets, exist_ok=True)
     os.makedirs(args.out_src, exist_ok=True)
@@ -1465,9 +1725,24 @@ def main():
     if not args.blob_h:
         args.blob_h = os.path.join(args.out_include, f"{base_name}-blob.h")
     if not args.format_h:
-        args.format_h = os.path.join("include", "level_format.h")
+        args.format_h = os.path.join(GEN_ROOT, "include", "level_format.h")
     if not args.blob_name:
         args.blob_name = f"{c_ident}_blob"
+
+    if not os.path.isabs(args.output):
+        args.output = os.path.join(project_root, args.output)
+    if not os.path.isabs(args.ids):
+        args.ids = os.path.join(project_root, args.ids)
+    if not os.path.isabs(args.sym):
+        args.sym = os.path.join(project_root, args.sym)
+    if not os.path.isabs(args.json):
+        args.json = os.path.join(project_root, args.json)
+    if not os.path.isabs(args.blob_c):
+        args.blob_c = os.path.join(project_root, args.blob_c)
+    if not os.path.isabs(args.blob_h):
+        args.blob_h = os.path.join(project_root, args.blob_h)
+    if not os.path.isabs(args.format_h):
+        args.format_h = os.path.join(project_root, args.format_h)
 
     # .bin
     try:

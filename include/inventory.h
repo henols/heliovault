@@ -6,7 +6,7 @@
 void inventory_init(void);
 void inventory_clear(void);
 uint8_t inventory_has(uint8_t item_id);
-void inventory_add(uint8_t item_id);
-void inventory_remove(uint8_t item_id);
+void inventory_add(ItemId item_id);
+void inventory_remove(ItemId item_id);
 
 #endif

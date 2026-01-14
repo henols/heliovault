@@ -5,13 +5,27 @@
 
 static const uint8_t* level_blob = boot_audit_blob;
 
+static uint8_t level_blob_valid(const uint8_t* blob) {
+    if (!blob) {
+        return 0;
+    }
+    return blob[0] == LVL_MAGIC_0 &&
+           blob[1] == LVL_MAGIC_1 &&
+           blob[2] == LVL_MAGIC_2 &&
+           blob[3] == LVL_MAGIC_3 &&
+           lvl_rd8(blob, LVL_HDR_OFS_VERSION) == LVL_VERSION;
+}
+
 void level_set_blob(const uint8_t* blob) {
-    if (blob) {
+    if (level_blob_valid(blob)) {
         level_blob = blob;
     }
 }
 
 const uint8_t* level_get_blob(void) {
+    if (!level_blob_valid(level_blob)) {
+        return boot_audit_blob;
+    }
     return level_blob;
 }
 

@@ -124,11 +124,11 @@ python tools/levelc.py levels/level1.lvl
 
 This writes outputs into:
 
-- `.bin` → `assets/levels/`
-- `.c` → `src/levels/`
-- `-blob.h`, ids `.h` → `include/levels/`
-- `level_format.h` → `include/`
-- `.sym`, `.json` → `build/levels/`
+- `.bin` → `gen/assets/levels/`
+- `.c` → `gen/src/levels/`
+- `-blob.h`, ids `.h` → `gen/include/levels/`
+- `level_format.h` → `gen/include/`
+- `.sym`, `.json` → `gen/analysis/levels/`
 
 All files use the LEVEL name as the base filename (sanitized).
 
@@ -140,7 +140,27 @@ header as `levels/<level>-blob.h` and the shared format header as
 
 ---
 
-## 5) How the engine uses the output
+## 5) CLI options (common)
+
+```
+python tools/levelc.py levels/boot_audit.lvl \
+  --out-assets gen/assets/levels \
+  --out-src gen/src/levels \
+  --out-include gen/include/levels \
+  --out-debug gen/analysis/levels
+```
+
+Optional overrides:
+- `--ids` write IDs header to a specific path
+- `--json` write debug JSON to a specific path
+- `--sym` write symbol map to a specific path
+- `--blob-c` / `--blob-h` write the blob C/header to a specific path
+- `--blob-name` override the C symbol name (default `<level>_blob`)
+- `--format-h` write `level_format.h` to a specific path
+
+---
+
+## 6) How the engine uses the output
 
 At runtime:
 
@@ -156,7 +176,7 @@ Typical usage:
 
 ---
 
-## 6) Example: Locker keypad + breaker
+## 7) Example: Locker keypad + breaker
 
 ```
 OBJECTS
@@ -167,7 +187,7 @@ END
 
 ---
 
-## 7) Example: Hatch panel with item routing
+## 8) Example: Hatch panel with item routing
 
 ```
 OBJECTS
@@ -183,17 +203,21 @@ The engine routes USE by item id and executes the correct action script.
 
 ---
 
-## 8) File placement convention
+## 9) File placement convention
 
 Recommended layout:
 
 - `levels/` for `.lvl` source files
-- `tools/` for generated `.c/.h/.sym/.bin` outputs
+- `gen/assets/levels/` for `.bin` blobs
+- `gen/src/levels/` for generated `.c` blobs
+- `gen/include/levels/` for generated `.h` headers
+- `gen/analysis/levels/` for `.sym` and `.json`
 
 ---
 
-## 9) Debugging tips
+## 10) Debugging tips
 
 - Use `--sym` to inspect offsets for objects and scripts.
 - Use `--json` to sanity-check IDs and counts.
 - If objects are not interactable, check `cond=` names and script offsets.
+ - If a `tset` is referenced, ensure its CHARMAP/object stamps match your MAP.

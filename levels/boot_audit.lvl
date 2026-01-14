@@ -2,26 +2,7 @@
 ; LEVEL 1: BOOT AUDIT
 ; =========================
 
-LEVEL name="BOOT AUDIT" w=20 h=12 start=R0:S0
-
-TILES
-. 0
-# 1
-= 2
-H 3
-~ 4
-I 5
-M 6
-L 7
-V 8
-P 9
-T 10
-S 11
-E 12
-F 13
-B 14
-P 15
-END
+LEVEL name="BOOT AUDIT" w=20 h=12 start=R0:S0 tset=BOOT_AUDIT1.tset
 
 FLAGS
 LOCKER_L3_OPEN
@@ -29,7 +10,7 @@ GOT_BADGE
 GOT_FUSE
 GOT_SCREWDRIVER
 GOT_LOG_TAPE_01
-RELAYS_OK
+RELAYS_OK 
 FUSE_INSTALLED
 BADGE_SWIPED
 STATUS_GREEN
@@ -173,34 +154,7 @@ ACT SWIPE_BADGE
   SFX 1
 END
 
-ACT EXIT_TO_L2
-  TRANSITION R2 S0
-END
 
-
-; =========================
-; ROOM 0: Vestibule
-; =========================
-ROOM R2 name="xxx"
-
-SPAWNS
-  S0 2,7
-END
-MAP
-####################
-#I......M..L.......#
-#...............V..#
-#.................##
-#..................#
-#..................#
-#=======....=======#
-#P.................#
-#........H.........#
-#........H.....T...#
-#........H.........#
-####################
-END
-ENDROOM
 
 ; =========================
 ; ROOM 0: Vestibule
@@ -237,12 +191,12 @@ OBJECTS
   ; optional credits
   O8 at 11,4 type=PICKUP verbs=TAKE item=CREDITS take=TAKE_CREDITS cond=ALWAYS
 END
-
+ 
 MAP
-####################
-#I......M..L.......#
+#################### 
+#T......|..T.......#
 #...............V..#
-#.................##
+#....ss............#
 #..................#
 #..................#
 #=======....=======#
@@ -250,7 +204,7 @@ MAP
 #........H.........#
 #........H.....T...#
 #........H.........#
-####################
+____________________
 END
 
 ENDROOM
@@ -293,20 +247,20 @@ OBJECTS
   O5 at 16,2 type=HATCH_PANEL verbs=USE p0=0 p1=0 use=NOOP cond=RELAYS_OK
 
   ; exit hatch (transition)
-  O6 at 16,1 type=EXIT_TRIGGER verbs=OPERATE operate=EXIT_TO_L2 cond=EXIT_READY
+  ; O6 at 16,1 type=EXIT_TRIGGER verbs=OPERATE operate=EXIT_TO_L2 cond=EXIT_READY
 END
 
 MAP
 ####################
-#..S.............E.#
-#...............F..#
+#..T.............E.#
+#...............G..#
 #..................#
 #..................#
-#..B...............#
+#..P...............#
 #=======....=======#
 #P.................#
-#........H...~~~...#
-#........H...~~~...#
+#........H...VDE...#
+#........H...G--...#
 #........H.........#
 ####################
 END

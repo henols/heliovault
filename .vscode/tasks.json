@@ -1,15 +1,118 @@
 {
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "build",
-      "type": "shell",
-      "command": "make",
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "problemMatcher": []
-    }
-  ]
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "watch assets",
+            "type": "shell",
+            "command": "${workspaceFolder}/.venv/bin/python",
+            "args": [
+                "${workspaceFolder}/tools/watch_assets.py",
+                "${workspaceFolder}"
+            ],
+            "isBackground": true,
+            "problemMatcher": {
+                "owner": "assetgen",
+                "fileLocation": [
+                    "absolute"
+                ],
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "^ASSETGEN START$",
+                    "endsPattern": "^ASSETGEN END$"
+                },
+                "pattern": {
+                    "regexp": "^(.+):(\\d+):(\\d+):\\s+(error|warning):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "presentation": {
+                "reveal": "never",
+                "panel": "shared",
+                "focus": false,
+                "showReuseMessage": false,
+                "clear": false
+            },
+            "runOptions": {
+                "runOn": "folderOpen"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "type": "shell",
+            "label": "build assets",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/tools/build_assets.py"
+            ],
+            "problemMatcher": {
+                "owner": "assetgen",
+                "fileLocation": [
+                    "absolute"
+                ],
+                "pattern": {
+                    "regexp": "^(.+):(\\d+):(\\d+):\\s+(error|warning):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "type": "shell",
+            "label": "expand project-config sources",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/tools/gen_build.py"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "type": "vs64",
+            "action": "build",
+            "dependsOn": [
+                "build assets",
+                "expand project-config sources"
+            ],
+            "dependsOrder": "sequence",
+            "group": "build",
+            "label": "build project"
+        },
+        {
+            "type": "vs64",
+            "action": "rebuild",
+            "problemMatcher": [
+                "$oscar64"
+            ],
+            "dependsOn": [
+                "build assets",
+                "expand project-config sources"
+            ],
+            "dependsOrder": "sequence",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "label": "vs64: rebuild",
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "focus": false,
+                "showReuseMessage": false,
+                "clear": false
+            }
+        }
+    ]
 }
