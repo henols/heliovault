@@ -165,7 +165,7 @@ def _tset_outputs_for(path: Path, root: Path) -> list[Path]:
 def run_once(
     root: Path,
     levels_dir: Path,
-    tset_path: Path,
+    tset_dir: Path,
     tilesetc: Path,
     levelc: Path,
     cache_path: Path,
@@ -174,7 +174,7 @@ def run_once(
     ok = True
     cache = load_cache(cache_path)
     if not (changed_path and changed_path.endswith(".lvl")):
-        for tset in sorted(tset_path.parent.glob("*.tset")):
+        for tset in sorted(tset_dir.glob("*.tset")):
             tset_outputs = _tset_outputs_for(tset, root)
             if should_run(tset, tset_outputs, cache):
                 if run([sys.executable, str(tilesetc), str(tset), "-o", str(tset_outputs[0])]):
@@ -211,7 +211,7 @@ def run_once(
 
 def run_tset_only(
     root: Path,
-    tset_path: Path,
+    tset_dir: Path,
     tilesetc: Path,
     cache_path: Path,
     changed_path: str | None = None,
@@ -221,7 +221,7 @@ def run_tset_only(
     if changed_path:
         tsets = [Path(changed_path)]
     else:
-        tsets = sorted(tset_path.parent.glob("*.tset"))
+        tsets = sorted(tset_dir.glob("*.tset"))
     for tset in tsets:
         tset_outputs = _tset_outputs_for(tset, root)
         if should_run(tset, tset_outputs, cache):
@@ -245,20 +245,25 @@ def main() -> None:
     root = (Path(args.root).resolve() if args.root else Path(__file__).resolve().parents[2])
     levels_dir = (root / args.levels).resolve()
     tset_path = (root / args.tset).resolve()
+    tset_dir = tset_path if tset_path.is_dir() else tset_path.parent
     cache_path = root / "build" / ".asset_cache.json"
 
     if not levels_dir.is_dir():
         print(f"{levels_dir}:1:1: error: Levels dir not found", file=sys.stderr)
         sys.exit(1)
-    if not tset_path.is_file():
-        print(f"{tset_path}:1:1: error: Tileset not found", file=sys.stderr)
+    if not tset_dir.is_dir():
+        print(f"{tset_dir}:1:1: error: Tileset directory not found", file=sys.stderr)
+        sys.exit(1)
+    candidates = sorted(tset_dir.glob("*.tset"))
+    if not candidates:
+        print(f"{tset_dir}:1:1: error: No .tset files found", file=sys.stderr)
         sys.exit(1)
 
     tilesetc = root / "tools" / "tilesetc.py"
     levelc = root / "tools" / "levelc.py"
 
     if args.once:
-        success = run_once(root, levels_dir, tset_path, tilesetc, levelc, cache_path)
+        success = run_once(root, levels_dir, tset_dir, tilesetc, levelc, cache_path)
         if not success:
             sys.exit(1)
         return
@@ -272,7 +277,7 @@ def main() -> None:
 
     def run_cycle():
         print("ASSETGEN START")
-        run_once(root, levels_dir, tset_path, tilesetc, levelc, cache_path, changed_path=None)
+        run_once(root, levels_dir, tset_dir, tilesetc, levelc, cache_path, changed_path=None)
         print("ASSETGEN END")
 
     class AssetsHandler(FileSystemEventHandler):
@@ -282,12 +287,12 @@ def main() -> None:
             if event.src_path.endswith(".lvl") or event.src_path.endswith(".tset"):
                 print("ASSETGEN START")
                 if event.src_path.endswith(".tset"):
-                    run_tset_only(root, tset_path, tilesetc, cache_path, changed_path=event.src_path)
+                    run_tset_only(root, tset_dir, tilesetc, cache_path, changed_path=event.src_path)
                 else:
                     run_once(
                         root,
                         levels_dir,
-                        tset_path,
+                        tset_dir,
                         tilesetc,
                         levelc,
                         cache_path,
@@ -301,12 +306,12 @@ def main() -> None:
             if event.src_path.endswith(".lvl") or event.src_path.endswith(".tset"):
                 print("ASSETGEN START")
                 if event.src_path.endswith(".tset"):
-                    run_tset_only(root, tset_path, tilesetc, cache_path, changed_path=event.src_path)
+                    run_tset_only(root, tset_dir, tilesetc, cache_path, changed_path=event.src_path)
                 else:
                     run_once(
                         root,
                         levels_dir,
-                        tset_path,
+                        tset_dir,
                         tilesetc,
                         levelc,
                         cache_path,
@@ -316,7 +321,7 @@ def main() -> None:
 
     observer = Observer()
     observer.schedule(AssetsHandler(), str(levels_dir), recursive=False)
-    observer.schedule(AssetsHandler(), str(tset_path.parent), recursive=False)
+    observer.schedule(AssetsHandler(), str(tset_dir), recursive=False)
     observer.start()
 
     run_cycle()

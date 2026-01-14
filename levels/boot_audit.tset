@@ -1,6 +1,6 @@
 ; Auto-generated from MD spec. Comments annotate charmap and tile intent.
 
-TSET name="BOOT_AUDIT1" tileSize=2x2 bgColor=DARK_GREY mc1Color=BLACK mc2Color=GREY charset=assets/BOOT_AUDIT1_chargen.bin
+TSET name="boot_audit" tileSize=2x2 bgColor=DARK_GREY mc1Color=BLACK mc2Color=GREY charset=assets/boot_audit_chargen.bin
 
 CHARMAP
 ; NON-OBJECT TILES

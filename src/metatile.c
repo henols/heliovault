@@ -1,15 +1,15 @@
 #include "metatile.h"
 
 #include "tileset_format.h"
-#include "tilesets/BOOT_AUDIT1_tset-blob.h"
-#include "charset/BOOT_AUDIT1_charset-blob.h"
+#include "tilesets/boot_audit_tset-blob.h"
+#include "charset/boot_audit_charset-blob.h"
 
 #include <stddef.h>
 
 static const uint8_t mt_default_chars[4] = {32, 32, 32, 32};
 static const uint8_t mt_default_colors[4] = {1, 1, 1, 1};
-static const uint8_t* mt_blob = BOOT_AUDIT1_tset_blob;
-static const uint8_t* mt_charset_blob = BOOT_AUDIT1_charset_blob;
+static const uint8_t* mt_blob = boot_audit_tset_blob;
+static const uint8_t* mt_charset_blob = boot_audit_charset_blob;
 static uint32_t mt_charset_size = 0u;
 
 static uint8_t metatile_blob_ok(const uint8_t* blob) {
@@ -51,7 +51,7 @@ void metatile_init(void) {
     if (!metatile_blob_ok(mt_blob)) {
         mt_blob = NULL;
     }
-    mt_charset_size = BOOT_AUDIT1_charset_blob_size;
+    mt_charset_size = boot_audit_charset_blob_size;
     if (!mt_charset_blob || mt_charset_size == 0u) {
         mt_charset_blob = NULL;
         mt_charset_size = 0u;

@@ -21,8 +21,8 @@
         "src/room.c",
         "src/textbox.c",
         "gen/src/levels/boot_audit.c",
-        "gen/src/tilesets/BOOT_AUDIT1_tset.c",
-        "gen/src/charset/BOOT_AUDIT1_charset.c"
+        "gen/src/tilesets/boot_audit_tset.c",
+        "gen/src/charset/boot_audit_charset.c"
     ],
     "build": "debug",
     "definitions": [],

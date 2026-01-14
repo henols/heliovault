@@ -308,7 +308,11 @@ def _load_tset_tiles(path: str, errors: ErrorCollector) -> Tuple[Dict[str, int],
     def err_cb(message: str, line: int, col: int) -> None:
         errors.add_error(message, file=path, line=line, col=col)
 
-    ts = parse_tset_shared(path, error_cb=err_cb)
+    try:
+        ts = parse_tset_shared(path, error_cb=err_cb)
+    except FileNotFoundError:
+        errors.add_error(f"TSET file not found: {path}", file=path, line=1, col=1)
+        return {}, {}, {}
     tiles = dict(ts.tiles_by_name)
     charmap = dict(ts.charmap_tiles)
     objects = dict(ts.object_stamps)
@@ -414,7 +418,10 @@ def parse_lvltext(path: str, errors: ErrorCollector) -> Optional[LevelDef]:
                     tset_path = kv["tset"]
                     if not os.path.isabs(tset_path):
                         tset_path = os.path.join(os.path.dirname(path), tset_path)
-                    tset_tiles, tset_charmap, tset_objects = _load_tset_tiles(tset_path, errors)
+                    if not os.path.isfile(tset_path):
+                        err(f"TSET file not found: {tset_path}", line_no, _col_for_token(raw_line, "tset"))
+                    else:
+                        tset_tiles, tset_charmap, tset_objects = _load_tset_tiles(tset_path, errors)
                 level = LevelDef(
                     name=kv.get("name", "UNNAMED"),
                     w=int(kv["w"]),
