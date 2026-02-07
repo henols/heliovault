@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 """
 koala_tilekit_compiler.py
-Compile a C64 Koala image plus a tile spec into a tileset, charset, and maps.
+Compile a C64 Koala image plus a JSON tile spec into a tileset, charset, and maps.
+
+This tool extracts 16x16 tiles from a Koala Painter image, builds a shared
+multicolor character set, and writes a .tset file plus analysis outputs.
 
 Inputs:
-  - Koala Painter .kla (images/level_maint_bg.kla)
-  - Spec JSON (images/level_maint_bg.json)
+  - Koala Painter .kla (320x200 multicolor) or .kla with 2-byte load header
+  - Spec JSON with "cells" and optional "objects"
 
-Outputs:
-  - charset (.bin) in assets
-  - tileset (.tset) with named tiles and object stamps
-  - full-image metatile map (.bin) in gen/analysis
-  - preview PNGs + debug info in gen/analysis
+Outputs (defaults, per spec basename):
+  - assets/<name>_chargen.bin
+  - levels/<name>.tset
+  - gen/analysis/<name>/<name>_tmap.bin
+  - gen/analysis/<name>/<name>_tile_locations.png
+  - gen/analysis/<name>/<name>_info.txt
+  - gen/analysis/<name>/tiles.md + per-tile PNGs
+
+See docs/koala_tilekit_compiler.md for full usage and spec format.
 """
 
 import argparse
@@ -47,6 +54,7 @@ PAL = np.array([C64[i][1] for i in range(16)], dtype=np.uint8)
 
 
 def load_kla(path: Path) -> np.ndarray:
+    """Load a Koala .kla file into a 320x200 indexed color array."""
     data = path.read_bytes()
     if len(data) == 10003:
         data = data[2:]
@@ -85,17 +93,20 @@ def load_kla(path: Path) -> np.ndarray:
 
 
 def idx_to_rgb(idx_img: np.ndarray) -> Image.Image:
+    """Convert an indexed image to RGB using the fixed C64 palette."""
     rgb = PAL[idx_img].astype(np.uint8)
     return Image.fromarray(rgb, mode="RGB")
 
 
 def choose_global_colors(idx_img: np.ndarray):
+    """Pick the three most common colors as BG/MC1/MC2 candidates."""
     counts = np.bincount(idx_img.flatten(), minlength=16)
     order = counts.argsort()[::-1]
     return int(order[0]), int(order[1]), int(order[2])
 
 
 def encode_mc_char_best(cell8x8: np.ndarray, bg: int, mc1: int, mc2: int):
+    """Encode one 8x8 block by picking the best local color (LC)."""
     best_bytes = None
     best_lc = 0
     best_err = 10**9
@@ -132,6 +143,7 @@ def encode_mc_char_best(cell8x8: np.ndarray, bg: int, mc1: int, mc2: int):
 
 
 def choose_mc_colors(cells: list[np.ndarray], bg: int, fast: bool = False) -> tuple[int, int]:
+    """Choose MC1/MC2 for the full image; optionally use a fast heuristic."""
     colors = [c for c in range(16) if c != bg]
     if fast:
         counts = np.bincount(np.concatenate([c.flatten() for c in cells]), minlength=16)
@@ -167,6 +179,7 @@ def choose_mc_colors(cells: list[np.ndarray], bg: int, fast: bool = False) -> tu
 
 
 def render_mc_char(char8: bytes, lc: int, bg: int, mc1: int, mc2: int) -> np.ndarray:
+    """Render an 8x8 multicolor character back into indexed pixels."""
     out = np.full((8, 8), bg, dtype=np.uint8)
     mapping = {0: bg, 1: mc1, 2: mc2, 3: lc}
     for y in range(8):
@@ -180,6 +193,7 @@ def render_mc_char(char8: bytes, lc: int, bg: int, mc1: int, mc2: int) -> np.nda
 
 
 def parse_json(path: Path):
+    """Parse the tile spec and expand objects into per-tile entries."""
     data = json.loads(path.read_text(encoding="utf-8"))
     cells = data.get("cells", [])
     objects = data.get("objects", [])
@@ -263,17 +277,20 @@ def parse_json(path: Path):
 
 
 def sanitize_tile_name(name: str) -> str:
+    """Normalize tile names to A-Z0-9_ for .tset output."""
     cleaned = re.sub(r"[^A-Z0-9_]", "_", name.upper())
     cleaned = re.sub(r"_+", "_", cleaned).strip("_")
     return cleaned or "TILE"
 
 
 def normalize_flags(flags: str) -> str:
+    """Normalize flag strings into uppercase PIPE-delimited form."""
     parts = [p.strip().upper() for p in re.split(r"[,\s|]+", flags) if p.strip()]
     return "|".join(parts)
 
 
 def build_charset(char_patterns: list[bytes]):
+    """Build a 256-char set and mapping from selected character patterns."""
     counts = Counter(char_patterns)
     uniq = list(counts.keys())
     if len(uniq) <= 256:
@@ -311,6 +328,7 @@ def build_charset(char_patterns: list[bytes]):
 
 
 def tile_distance(a, b) -> int:
+    """Distance heuristic for nearest-tile matching."""
     ach, acol = a
     bch, bcol = b
     d = 0

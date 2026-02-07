@@ -1,74 +1,92 @@
-**GOAL**
-Create ONE densely packed **PIXEL ART TEXTURE ATLAS (GRID SHEET)** in a strict 2D side-view.
-The image must be a collection of isolated assets that condenses ALL required objects and tiles into this single image (20x12 grid).
+# Koala Tilekit Compiler
 
-**WORKFLOW (must follow this order)**
-1. Read the provided level documentation to identify ALL unique object types, hazards, wall tiles, and decor.
-2. Create and render the "Texture Atlas," placing every unique element into the grid cells **separately**.
-3. After the image is complete, generate JSON for the grid mapping.
+Builds a tileset, charset, and analysis artifacts from a C64 Koala image plus a JSON tile spec.
 
-**ATLAS LAYOUT RULES**
-* **Separation:** Do NOT build a connected scene or room. Treat every grid cell (or block of cells) as a separate file.
-* **Zero Spacing:** Pack objects tightly, edge-to-edge. Do **NOT** leave empty buffer space between different objects.
-* **Grid Usage:** Maximize the use of the 20x12 grid. Fill every available slot with assets.
-* **Mandatory Inclusions:** Include at least one instance of **EVERY** object type, interactable, and surface variation listed in the text.
-* **Prioritization:** If space is limited, prioritize unique interactable objects and hazards over generic background tiles.
+## Usage
 
-**PIXEL ART STYLE REQUIREMENTS (hard)**
-* **Perspective:** Strictly **orthographic 2D side-view**.
-    * The image must look like a flat platformer tile set.
-    * Do NOT render side walls, floor depth, ceiling depth, or 3D perspective.
-    * The back wall is perfectly parallel to the screen.
-* **Color Quantization:** Hard-edge color assignment only.
-    * No anti-aliasing, no alpha transparency, and no soft color blending.
-* **Shading:** Use **dithered gradients** (Bayer or checkerboard patterns) for lighting transitions.
-    * Do NOT create new intermediate colors to bridge shades.
-* **Surface Detail:** Every asset must use multi-tone shading and texture; no large flat fills. Use clustered pixel shading, bevels, grime, scratches, and decals.
-* **Palette Enforcement:** Use ONLY this palette (no other colors allowed). If a shadow or highlight is needed, snap it to the nearest allowed color:
-    #000000, #626262, #898989, #adadad, #ffffff, #9f4e44, #cb7e75, #6d5412, #a1683c, #c9d487, #9ae29b, #5cab5e, #6abfc6, #887ecb, #50459b, #a057a3
+```
+python tools/koala_tilekit_compiler.py images/boot_audit.json
+```
 
-**IMAGE RATIO + BLACK PADDING (critical)**
-* Final image aspect ratio: exactly 20 : 12.5 (1.6).
-* Bottom 4% is solid #000000 padding; nothing touches it.
+Optional overrides:
 
-**GRID LOGIC (Strict Sizing)**
-* The top 96% of the image is the asset area: 20 columns × 12 rows.
-* **DEFAULT SIZE (1x1):** You must attempt to fit every object into a **single 1x1 grid square**.
-* **EXPANSION RULES:** Only expand an object's footprint if it is physically impossible to represent it in 1x1 (e.g., a tall boss, a long bridge).
-* **Allowed Footprints:**
-    * **Standard:** 1x1 (Most preferred)
-    * **Tall:** 1x2, 1x3
-    * **Wide:** 2x1, 3x1
-    * **Block:** 2x2
-* **Strict Packing:** Object A at (0,0) and Object B at (1,0) should be visually distinct assets, even though they touch.
-* Assets must be centered in their assigned footprint.
+```
+python tools/koala_tilekit_compiler.py images/boot_audit.json \
+  --kla images/boot_audit.kla \
+  --out-dir gen/analysis/boot_audit \
+  --charset assets/boot_audit_chargen.bin \
+  --tset levels/boot_audit.tset \
+  --tmap gen/analysis/boot_audit/boot_audit_tmap.bin \
+  --tile-map gen/analysis/boot_audit/boot_audit_tile_locations.png \
+  --info gen/analysis/boot_audit/boot_audit_info.txt
+```
 
-**FLAGS (ONLY these are allowed in JSON)**
-SOLID, DECOR, STANDABLE, LADDER, DOOR, INTERACTABLE, FLOOR, HAZARD
+## Inputs
 
-**OUTPUTS (must output BOTH, in order)**
-1. Output the PNG image directly (visible in the response).
-2. Output ONE JSON code block (strict JSON, no comments, no trailing commas).
+- Koala Painter `.kla` image (320x200 multicolor). Files with a 2-byte load header are accepted.
+- Spec `.json` file describing tiles and objects.
 
-**JSON REQUIREMENTS**
-* The grid is 20×12.
-* **Object Isolation:** Even if pixels touch in the image, the JSON must define them as separate entries in `objects[]` or `cells[]`.
-* **Objects:** Interactive elements, props, and enemies go in `objects[]`.
-* **Cells:** Static terrain tiles (walls, floors) go in `cells[]`.
-* Each entry must have:
-    * x, y (grid coordinate)
-    * w, h (dimensions matching the allowed footprints: 1, 2, or 3)
-    * flags (subset of allowed flags)
-    * description (short and specific)
+### Spec format
 
-**JSON FORMAT**
+The spec contains `cells` for individual 16x16 tiles and `objects` for grouped tiles
+(stamps). Coordinates are in tile units (16x16). Each cell or object provides a
+sample position from the Koala image; those samples become the source tile art.
+
 ```json
 {
   "cells": [
-    { "x": 0, "y": 0, "w": 1, "h": 1, "flags": ["SOLID", "FLOOR"], "description": "Standard concrete floor tile" }
+    {
+      "x": 0,
+      "y": 0,
+      "w": 1,
+      "h": 1,
+      "flags": ["SOLID"],
+      "description": "Standard reinforced wall panel"
+    }
   ],
   "objects": [
-    { "id": "O1", "type": "<object type>", "x": 1, "y": 0, "w": 1, "h": 1, "flags": ["INTERACTABLE"], "description": "Small medical kit" },
-    { "id": "O2", "type": "<object type>", "x": 2, "y": 0, "w": 1, "h": 3, "flags": ["HAZARD"], "description": "Tall electric pylon (expanded height)" }
+    {
+      "id": "O1",
+      "type": "DOOR_GLASS",
+      "x": 0,
+      "y": 3,
+      "w": 2,
+      "h": 1,
+      "flags": ["SOLID", "DECOR"],
+      "description": "Glass partition"
+    }
   ]
 }
+```
+
+Field notes:
+- `x`, `y`, `w`, `h` are in 16x16 tile units.
+- `description` becomes the tile label; it is sanitized for `.tset` output.
+- `flags` are normalized to upper-case `|` delimited values.
+- Objects expand into per-tile entries with a generated role and `variant_of` metadata.
+
+## Outputs (default paths)
+
+- `assets/<name>_chargen.bin`
+- `levels/<name>.tset`
+- `gen/analysis/<name>/<name>_tmap.bin`
+- `gen/analysis/<name>/<name>_tile_locations.png`
+- `gen/analysis/<name>/<name>_info.txt`
+- `gen/analysis/<name>/tiles.md`
+- `gen/analysis/<name>/tiles/*.png`
+
+## Notes
+
+- The tool chooses BG/MC1/MC2 from the most common colors, then finds the best
+  per-character local color.
+- `--fast` uses a heuristic for MC1/MC2 selection and is much quicker on large
+  specs.
+- The `.tset` output includes a CHARMAP, TILES section, and optional OBJECTS
+  section when multi-tile objects are defined.
+- The full-image `tmap` is built by matching each 16x16 cell against the
+  generated tile list using a nearest-tile heuristic.
+
+## Related docs
+
+- `docs/tools.md`
+- `docs/tset_format.md`

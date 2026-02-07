@@ -55,6 +55,7 @@ Outputs (defaults, per spec name):
 Notes:
 - The spec drives tile names, flags, and object stamps.
 - Use `--fast` to speed up MC color selection.
+- See `docs/koala_tilekit_compiler.md` for spec details and outputs.
 
 ---
 

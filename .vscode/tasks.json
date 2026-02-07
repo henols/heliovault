@@ -64,6 +64,13 @@
                     "message": 5
                 }
             },
+            "presentation": {
+                "reveal": "never",
+                "panel": "shared",
+                "focus": false,
+                "showReuseMessage": false,
+                "clear": false
+            },
             "options": {
                 "cwd": "${workspaceFolder}"
             }
@@ -77,6 +84,13 @@
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "reveal": "never",
+                "panel": "shared",
+                "focus": false,
+                "showReuseMessage": false,
+                "clear": false
             }
         },
         {
@@ -88,7 +102,14 @@
             ],
             "dependsOrder": "sequence",
             "group": "build",
-            "label": "build project"
+            "label": "build project",
+            "presentation": {
+                "reveal": "never",
+                "panel": "shared",
+                "focus": false,
+                "showReuseMessage": false,
+                "clear": false
+            }
         },
         {
             "type": "vs64",
@@ -107,7 +128,7 @@
             },
             "label": "vs64: rebuild",
             "presentation": {
-                "reveal": "silent",
+                "reveal": "never",
                 "panel": "shared",
                 "focus": false,
                 "showReuseMessage": false,
