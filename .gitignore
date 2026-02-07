@@ -11,3 +11,8 @@ gen/analysis
 tools/__pycache__/
 
 tools/tasks/__pycache__/
+
+.lvl_editor/
+node_modules/
+
+*.log
