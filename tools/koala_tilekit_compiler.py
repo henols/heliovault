@@ -338,50 +338,22 @@ def tile_distance(a, b) -> int:
     return d
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("spec", help="Spec JSON")
-    ap.add_argument("--kla", default="", help="Koala file (defaults to match spec name)")
-    ap.add_argument("--out-dir", default="", help="Output directory (defaults to debug/<spec name>)")
-    ap.add_argument("--charset", default="", help="Output charset bin (defaults to assets/<spec name>_chargen.bin)")
-    ap.add_argument("--tset", default="", help="Output tileset (defaults to levels/<spec name>.tset)")
-    ap.add_argument("--tmap", default="", help="Output full map (defaults to debug/<spec name>/<spec name>_tmap.bin)")
-    ap.add_argument("--tile-map", default="", help="Output tile location map (defaults to debug/<spec name>/<spec name>_tile_locations.png)")
-    ap.add_argument("--info", default="", help="Output info (defaults to debug/<spec name>/<spec name>_info.txt)")
-    ap.add_argument("--fast", action="store_true", help="Use fast MC1/MC2 selection")
-    args = ap.parse_args()
-
-    root = Path(__file__).resolve().parent.parent
-    spec_path = (root / args.spec).resolve()
-    base_name = spec_path.stem
-    if not args.kla:
-        args.kla = str(Path(spec_path.parent) / f"{base_name}.kla")
-    if not args.out_dir:
-        args.out_dir = str(Path(ANALYSIS_ROOT) / base_name)
-    if not args.charset:
-        args.charset = str(Path("assets") / f"{base_name}_chargen.bin")
-    if not args.tset:
-        args.tset = str(Path("levels") / f"{base_name}.tset")
-    if not args.tmap:
-        args.tmap = str(Path(ANALYSIS_ROOT) / base_name / f"{base_name}_tmap.bin")
-    if not args.tile_map:
-        args.tile_map = str(Path(ANALYSIS_ROOT) / base_name / f"{base_name}_tile_locations.png")
-    if not args.info:
-        args.info = str(Path(ANALYSIS_ROOT) / base_name / f"{base_name}_info.txt")
-
-    kla_path = (root / args.kla).resolve()
-    out_dir = (root / args.out_dir).resolve()
-    charset_path = (root / args.charset).resolve()
-    tset_path = (root / args.tset).resolve()
-    tmap_path = (root / args.tmap).resolve()
-    tile_map_path = (root / args.tile_map).resolve()
-    info_path = (root / args.info).resolve()
-
+def build_tilekit(
+    spec_path: Path,
+    kla_path: Path,
+    charset_label: str | None = None,
+    fast: bool = False,
+) -> dict:
+    """Build tilekit assets in memory and return artifacts + metadata."""
     if spec_path.suffix.lower() != ".json":
-        raise SystemExit(f"Spec must be JSON: {spec_path}")
+        raise ValueError(f"Spec must be JSON: {spec_path}")
     entries, _ = parse_json(spec_path)
     if not entries:
-        raise SystemExit(f"No entries found in {spec_path}")
+        raise ValueError(f"No entries found in {spec_path}")
+
+    base_name = spec_path.stem
+    if charset_label is None:
+        charset_label = f"assets/{base_name}_chargen.bin"
 
     idx = load_kla(kla_path)
     bg, _, _ = choose_global_colors(idx)
@@ -390,7 +362,7 @@ def main() -> None:
         for cx in range(40):
             cell = idx[cy * 8:(cy + 1) * 8, cx * 8:(cx + 1) * 8]
             cells.append(cell)
-    mc1, mc2 = choose_mc_colors(cells, bg, fast=args.fast)
+    mc1, mc2 = choose_mc_colors(cells, bg, fast=fast)
 
     def extract_tile(px: int, py: int):
         if px < 0 or py < 0 or px + 15 >= 320 or py + 15 >= 200:
@@ -408,31 +380,26 @@ def main() -> None:
     tiles = []
     for e in entries:
         if "sample" not in e:
-            raise SystemExit(f"Missing SAMPLE_C64_XY for {e['name']}")
+            raise ValueError(f"Missing SAMPLE_C64_XY for {e['name']}")
         sx, sy = e["sample"]
-        try:
-            e["tile"] = extract_tile(sx, sy)
-        except ValueError as exc:
-            raise SystemExit(f"{e['name']}: {exc}") from exc
+        e["tile"] = extract_tile(sx, sy)
         tiles.append(e)
 
-    # Build charset from selected tiles only
     char_patterns = []
     for e in tiles:
         chars, _cols = e["tile"]
         char_patterns.extend(list(chars))
     uniq_chars, charset, char_index = build_charset(char_patterns)
-    charset_path.parent.mkdir(parents=True, exist_ok=True)
-    charset_path.write_bytes(bytes(charset))
 
     lines = []
     lines.append("; Auto-generated from MD spec. Comments annotate charmap and tile intent.\n\n")
+
     def color_name(idx: int) -> str:
         return C64[idx][0].upper()
 
     lines.append(
         f'TSET name="{base_name}" tileSize=2x2 bgColor={color_name(bg)} mc1Color={color_name(mc1)} '
-        f'mc2Color={color_name(mc2)} charset={args.charset}\n\n'
+        f'mc2Color={color_name(mc2)} charset={charset_label}\n\n'
     )
     charmap_seed = {
         "WALL": "#",
@@ -507,7 +474,6 @@ def main() -> None:
         if obj_type:
             object_groups[key]["type"] = obj_type
 
-    # CHARMAP: non-object tiles + 1x1 object tiles + object stamps
     lines.append("CHARMAP\n")
     if non_obj:
         lines.append("; NON-OBJECT TILES\n")
@@ -631,10 +597,7 @@ def main() -> None:
         for e in alias_tiles:
             emit_tile(e)
     lines.append("\nEND\n\nEND\n")
-    tset_path.parent.mkdir(parents=True, exist_ok=True)
-    tset_path.write_text("".join(lines), encoding="utf-8")
 
-    # Build full-image tmap using nearest tile
     tile_defs = [e["tile_rep"] for e in tile_output]
     tmap = np.zeros((12, 20), dtype=np.uint8)
     for my in range(12):
@@ -651,6 +614,119 @@ def main() -> None:
                         break
             tmap[my, mx] = best_i
 
+    return {
+        "base_name": base_name,
+        "spec_path": spec_path,
+        "kla_path": kla_path,
+        "bg": bg,
+        "mc1": mc1,
+        "mc2": mc2,
+        "idx": idx,
+        "charset": bytes(charset),
+        "charset_label": charset_label,
+        "char_index": char_index,
+        "uniq_chars": uniq_chars,
+        "tiles": tile_output,
+        "tset_text": "".join(lines),
+        "tmap": tmap,
+    }
+
+
+def compile_to_memory(
+    spec_path: str | Path,
+    kla_path: str | Path | None = None,
+    fast: bool = False,
+) -> dict:
+    """Compile a spec + Koala into in-memory artifacts (no files written)."""
+    root = Path(__file__).resolve().parent.parent
+    spec = Path(spec_path)
+    if not spec.is_absolute():
+        spec = (root / spec).resolve()
+    if kla_path is None:
+        kla = spec.with_suffix(".kla")
+    else:
+        kla = Path(kla_path)
+        if not kla.is_absolute():
+            kla = (root / kla).resolve()
+    charset_label = f"assets/{spec.stem}_chargen.bin"
+    tset_label = f"levels/{spec.stem}.tset"
+    build = build_tilekit(spec, kla, charset_label=charset_label, fast=fast)
+    return {
+        "base_name": build["base_name"],
+        "spec_path": str(build["spec_path"]),
+        "kla_path": str(build["kla_path"]),
+        "charset_bytes": build["charset"],
+        "tset_text": build["tset_text"],
+        "tmap_bytes": build["tmap"].flatten().tobytes(),
+        "charset_path": charset_label,
+        "tset_path": tset_label,
+        "charset_path_abs": str((root / charset_label).resolve()),
+        "tset_path_abs": str((root / tset_label).resolve()),
+        "bg": build["bg"],
+        "mc1": build["mc1"],
+        "mc2": build["mc2"],
+    }
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("spec", help="Spec JSON")
+    ap.add_argument("--kla", default="", help="Koala file (defaults to match spec name)")
+    ap.add_argument("--out-dir", default="", help="Output directory (defaults to debug/<spec name>)")
+    ap.add_argument("--charset", default="", help="Output charset bin (defaults to assets/<spec name>_chargen.bin)")
+    ap.add_argument("--tset", default="", help="Output tileset (defaults to levels/<spec name>.tset)")
+    ap.add_argument("--tmap", default="", help="Output full map (defaults to debug/<spec name>/<spec name>_tmap.bin)")
+    ap.add_argument("--tile-map", default="", help="Output tile location map (defaults to debug/<spec name>/<spec name>_tile_locations.png)")
+    ap.add_argument("--info", default="", help="Output info (defaults to debug/<spec name>/<spec name>_info.txt)")
+    ap.add_argument("--fast", action="store_true", help="Use fast MC1/MC2 selection")
+    args = ap.parse_args()
+
+    root = Path(__file__).resolve().parent.parent
+    spec_path = (root / args.spec).resolve()
+    base_name = spec_path.stem
+    if not args.kla:
+        args.kla = str(Path(spec_path.parent) / f"{base_name}.kla")
+    if not args.out_dir:
+        args.out_dir = str(Path(ANALYSIS_ROOT) / base_name)
+    if not args.charset:
+        args.charset = str(Path("assets") / f"{base_name}_chargen.bin")
+    if not args.tset:
+        args.tset = str(Path("levels") / f"{base_name}.tset")
+    if not args.tmap:
+        args.tmap = str(Path(ANALYSIS_ROOT) / base_name / f"{base_name}_tmap.bin")
+    if not args.tile_map:
+        args.tile_map = str(Path(ANALYSIS_ROOT) / base_name / f"{base_name}_tile_locations.png")
+    if not args.info:
+        args.info = str(Path(ANALYSIS_ROOT) / base_name / f"{base_name}_info.txt")
+
+    kla_path = (root / args.kla).resolve()
+    out_dir = (root / args.out_dir).resolve()
+    charset_path = (root / args.charset).resolve()
+    tset_path = (root / args.tset).resolve()
+    tmap_path = (root / args.tmap).resolve()
+    tile_map_path = (root / args.tile_map).resolve()
+    info_path = (root / args.info).resolve()
+
+    try:
+        build = build_tilekit(spec_path, kla_path, charset_label=args.charset, fast=args.fast)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    charset_path.parent.mkdir(parents=True, exist_ok=True)
+    charset_path.write_bytes(build["charset"])
+
+    tset_path.parent.mkdir(parents=True, exist_ok=True)
+    tset_path.write_text(build["tset_text"], encoding="utf-8")
+
+    idx = build["idx"]
+    bg = build["bg"]
+    mc1 = build["mc1"]
+    mc2 = build["mc2"]
+    uniq_chars = build["uniq_chars"]
+    char_index = build["char_index"]
+    tile_output = build["tiles"]
+
+    tmap = build["tmap"]
     out_dir.mkdir(parents=True, exist_ok=True)
     tmap_path.parent.mkdir(parents=True, exist_ok=True)
     tmap_path.write_bytes(tmap.flatten().tobytes())
@@ -766,7 +842,7 @@ def main() -> None:
         f"  $D023 MC2 = {mc2} ({C64[mc2][0]})",
         "",
         f"Chars used: {len(uniq_chars)}",
-        f"Tiles used: {len(tile_defs)}",
+        f"Tiles used: {len(tile_output)}",
     ])
     info_path.write_text(info, encoding="utf-8")
 

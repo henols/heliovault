@@ -30,6 +30,14 @@ FIXED_FLAGBITS = {
     "FLOOR": 6,
     "HAZARD": 7,
 }
+HINT_VALUES = {
+    "roof",
+    "floor",
+    "platform",
+    "wall",
+    "wall_right",
+    "wall_left",
+}
 
 COLOR_NAMES = {
     "black": 0,
@@ -64,6 +72,7 @@ class TileDef:
     color_mode: int           # 0 single, 1 per-quadrant
     colors: List[int]         # 4 values (if single: [c,0,0,0])
     flags: int
+    hint: str = ""
 
 
 @dataclass
@@ -162,10 +171,12 @@ def _col_for_kv_value(line: str, key: str) -> int:
     return m.start(1) + 1
 
 
-def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = None) -> TsetParseResult:
-    with open(path, "r", encoding="utf-8") as f:
-        raw = f.readlines()
-
+def _parse_tset_lines(
+    raw: List[str],
+    path: str,
+    error_cb: Optional[Callable[[str, int, int], None]] = None,
+    validate_charset: bool = True,
+) -> TsetParseResult:
     lines: List[Tuple[int, str, str]] = []
     for idx, ln in enumerate(raw, 1):
         raw_line = strip_comment(ln).rstrip("\n")
@@ -267,13 +278,18 @@ def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = 
                 err("mc2Color must be 0..15", line_no, _col_for_kv_value(raw_line, "mc2Color"))
             if "charset" in kv:
                 ts.charset_path = kv["charset"]
-                charset_path = ts.charset_path
-                if not os.path.isabs(charset_path):
-                    charset_path = os.path.join(os.path.dirname(path), charset_path)
+                if validate_charset:
+                    charset_path = ts.charset_path
+                    if not os.path.isabs(charset_path):
+                        charset_path = os.path.join(os.path.dirname(path), charset_path)
+                        if not os.path.isfile(charset_path):
+                            charset_path = os.path.join(os.path.dirname(path), "..", ts.charset_path)
                     if not os.path.isfile(charset_path):
-                        charset_path = os.path.join(os.path.dirname(path), "..", ts.charset_path)
-                if not os.path.isfile(charset_path):
-                    err(f"charset file not found: {ts.charset_path}", line_no, _col_for_kv_value(raw_line, "charset"))
+                        err(
+                            f"charset file not found: {ts.charset_path}",
+                            line_no,
+                            _col_for_kv_value(raw_line, "charset"),
+                        )
             continue
 
         if ts is None:
@@ -419,6 +435,11 @@ def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = 
                     err(f"Flag bit out of range 0..15 for {fn}", line_no, _col_for_token(raw_line, fn))
                 flags_mask |= (1 << bit)
 
+        hint = kv.get("hint", "").strip().lower()
+        if hint and hint not in HINT_VALUES:
+            err(f"Unknown hint '{hint}' in: {line}", line_no, _col_for_token(raw_line, "hint"))
+            hint = ""
+
         tile = TileDef(
             tid=tid,
             name=name,
@@ -426,6 +447,7 @@ def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = 
             color_mode=color_mode,
             colors=colors,
             flags=flags_mask,
+            hint=hint,
         )
         name_key = name.strip().upper()
         if name_key.startswith("TILE_"):
@@ -537,3 +559,23 @@ def parse_tset(path: str, error_cb: Optional[Callable[[str, int, int], None]] = 
             }
 
     return ts
+
+
+def parse_tset(
+    path: str,
+    error_cb: Optional[Callable[[str, int, int], None]] = None,
+    validate_charset: bool = True,
+) -> TsetParseResult:
+    with open(path, "r", encoding="utf-8") as f:
+        raw = f.readlines()
+    return _parse_tset_lines(raw, path, error_cb=error_cb, validate_charset=validate_charset)
+
+
+def parse_tset_text(
+    text: str,
+    path: str = "<memory>",
+    error_cb: Optional[Callable[[str, int, int], None]] = None,
+    validate_charset: bool = False,
+) -> TsetParseResult:
+    raw = text.splitlines(keepends=True)
+    return _parse_tset_lines(raw, path, error_cb=error_cb, validate_charset=validate_charset)
