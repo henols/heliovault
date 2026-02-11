@@ -42,9 +42,13 @@ except ImportError:
 
 try:
     from char_converter import ConvertResult, convert_image
+    from c64_converter import render_preview
+    from c64_converter.gui import ImageImportOptions
 except ImportError:
     ConvertResult = None
     convert_image = None
+    render_preview = None
+    ImageImportOptions = None
 
 _c64img_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "c64img"))
 if os.path.isdir(_c64img_path) and _c64img_path not in sys.path:
@@ -2771,8 +2775,10 @@ class CharsetApp:
         dialog = tk.Toplevel(self.root)
         dialog.title("Import Image Region")
         dialog.transient(self.root)
-        dialog.grab_set()
         dialog.resizable(True, True)
+        dialog.update_idletasks()
+        dialog.deiconify()
+        dialog.grab_set()
 
         dialog.grid_rowconfigure(1, weight=1)
         dialog.grid_columnconfigure(0, weight=1)
@@ -2930,6 +2936,91 @@ class CharsetApp:
         if self.current_tset:
             strategy_menu.configure(state="disabled")
 
+        lock_bg_var = tk.BooleanVar(value=False)
+        lock_mc1_var = tk.BooleanVar(value=False)
+        lock_mc2_var = tk.BooleanVar(value=False)
+        mixed_mode_var = tk.BooleanVar(value=False)
+        dither_var = tk.BooleanVar(value=False)
+        chroma_weight_var = tk.StringVar(value="0.25")
+        dither_strength_var = tk.StringVar(value="0.035")
+
+        lock_frame = tk.Frame(settings_col, pady=2)
+        lock_frame.pack(fill=tk.X)
+        tk.Label(lock_frame, text="Lock").pack(side=tk.LEFT)
+        lock_bg_cb = tk.Checkbutton(lock_frame, text="BG", variable=lock_bg_var)
+        lock_bg_cb.pack(side=tk.LEFT, padx=(6, 0))
+        lock_mc1_cb = tk.Checkbutton(lock_frame, text="MC1", variable=lock_mc1_var)
+        lock_mc1_cb.pack(side=tk.LEFT, padx=(6, 0))
+        lock_mc2_cb = tk.Checkbutton(lock_frame, text="MC2", variable=lock_mc2_var)
+        lock_mc2_cb.pack(side=tk.LEFT, padx=(6, 0))
+
+        misc_frame = tk.Frame(settings_col, pady=2)
+        misc_frame.pack(fill=tk.X)
+        tk.Checkbutton(misc_frame, text="Mixed-mode (hires per cell)", variable=mixed_mode_var).pack(side=tk.LEFT)
+        tk.Checkbutton(misc_frame, text="Ordered dither", variable=dither_var).pack(side=tk.LEFT, padx=(10, 0))
+
+        tune_frame = tk.Frame(settings_col, pady=2)
+        tune_frame.pack(fill=tk.X)
+        tk.Label(tune_frame, text="Chroma weight").pack(side=tk.LEFT)
+        chroma_values = ["0.0", "0.1", "0.2", "0.25", "0.35", "0.5", "0.75"]
+        chroma_menu = ttk.Combobox(
+            tune_frame,
+            textvariable=chroma_weight_var,
+            values=chroma_values,
+            state="readonly",
+            width=6,
+        )
+        chroma_menu.pack(side=tk.LEFT, padx=(6, 12))
+        tk.Label(tune_frame, text="Dither strength").pack(side=tk.LEFT)
+        dither_values = ["0.0", "0.02", "0.035", "0.05", "0.075", "0.1"]
+        dither_menu = ttk.Combobox(
+            tune_frame,
+            textvariable=dither_strength_var,
+            values=dither_values,
+            state="readonly",
+            width=6,
+        )
+        dither_menu.pack(side=tk.LEFT, padx=(6, 0))
+
+        if self.current_tset:
+            lock_bg_var.set(True)
+            lock_mc1_var.set(True)
+            lock_mc2_var.set(True)
+            lock_bg_cb.configure(state="disabled")
+            lock_mc1_cb.configure(state="disabled")
+            lock_mc2_cb.configure(state="disabled")
+
+        def _apply_strategy_to_locks(*_args):
+            val = strategy_var.get()
+            if val == "Auto":
+                if not self.current_tset:
+                    lock_bg_var.set(False)
+                    lock_mc1_var.set(False)
+                    lock_mc2_var.set(False)
+                return
+            if val == "Lock BG":
+                lock_bg_var.set(True)
+                lock_mc1_var.set(False)
+                lock_mc2_var.set(False)
+            elif val == "Lock BG+MC1":
+                lock_bg_var.set(True)
+                lock_mc1_var.set(True)
+                lock_mc2_var.set(False)
+            elif val == "Lock BG+MC1+MC2":
+                lock_bg_var.set(True)
+                lock_mc1_var.set(True)
+                lock_mc2_var.set(True)
+
+        def _locks_changed(*_args):
+            if self.current_tset:
+                return
+            strategy_var.set("Auto")
+
+        strategy_var.trace_add("write", _apply_strategy_to_locks)
+        lock_bg_var.trace_add("write", _locks_changed)
+        lock_mc1_var.trace_add("write", _locks_changed)
+        lock_mc2_var.trace_add("write", _locks_changed)
+
         info_frame = tk.LabelFrame(settings_row, text="Color Info", padx=8, pady=8)
         info_frame.configure(width=260, height=110)
         info_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(12, 0))
@@ -2961,7 +3052,10 @@ class CharsetApp:
         result_canvas = tk.Canvas(result_frame, width=preview_size, height=preview_size, background=body.cget("bg"))
         result_canvas.pack()
         result_canvas.image = None
-        result_state = {"after_id": None, "meta": None}
+        result_state = {"after_id": None, "meta": None, "dragging": False, "pending": False, "busy": False, "needs": False}
+        preview_state = {"after_id": None}
+        entry_state = {"after_id": None}
+        pending_selection = {"x": 0, "y": 0, "w": 1, "h": 1}
         output_override = {"active": False, "updating": False}
 
         def _current_lock_colors():
@@ -3032,6 +3126,18 @@ class CharsetApp:
                 return default
             try:
                 return int(value)
+            except (ValueError, TypeError):
+                return default
+
+        def _safe_float(var, default):
+            try:
+                value = var.get()
+            except tk.TclError:
+                return default
+            if value in ("", None):
+                return default
+            try:
+                return float(value)
             except (ValueError, TypeError):
                 return default
 
@@ -3108,13 +3214,47 @@ class CharsetApp:
                 result_canvas.delete("all")
                 result_canvas.image = None
 
+        def schedule_preview(delay_ms: int = 80):
+            if preview_state["after_id"]:
+                dialog.after_cancel(preview_state["after_id"])
+            preview_state["after_id"] = dialog.after(delay_ms, _run_preview)
+
+        def _run_preview():
+            preview_state["after_id"] = None
+            build_preview()
+
+        def schedule_entry_sync(delay_ms: int = 50):
+            if entry_state["after_id"]:
+                dialog.after_cancel(entry_state["after_id"])
+            entry_state["after_id"] = dialog.after(delay_ms, _run_entry_sync)
+
+        def _run_entry_sync():
+            entry_state["after_id"] = None
+            x_var.set(pending_selection["x"])
+            y_var.set(pending_selection["y"])
+            w_var.set(pending_selection["w"])
+            h_var.set(pending_selection["h"])
+
         def schedule_result_preview():
+            if result_state["dragging"]:
+                result_state["pending"] = True
+                return
             if result_state["after_id"]:
                 dialog.after_cancel(result_state["after_id"])
-            result_state["after_id"] = dialog.after(250, update_result_preview)
+            result_state["after_id"] = dialog.after(650, update_result_preview)
+
+        def schedule_result_preview_only():
+            if result_state["dragging"]:
+                result_state["pending"] = True
+                return
+            schedule_result_preview()
 
         def update_result_preview():
             result_state["after_id"] = None
+            if result_state["busy"]:
+                result_state["needs"] = True
+                return
+            result_state["busy"] = True
             try:
                 mode = mode_var.get()
                 cell_w = 8
@@ -3150,9 +3290,44 @@ class CharsetApp:
                     region = raw_region
                 else:
                     region = raw_region.resize((target_w, target_h), Image.NEAREST)
+                _apply_strategy_to_locks()
                 strategy = strategy_values.get(strategy_var.get(), "auto")
-                locks = _current_lock_colors()
-                result = convert_image(region, mode, strategy, locks, remap=fix_clash_var.get(), placement=placement)
+                current_colors = _current_lock_colors()
+                chroma_weight = _safe_float(chroma_weight_var, 0.25)
+                dither_strength = _safe_float(dither_strength_var, 0.035)
+                if ImageImportOptions is not None:
+                    options = ImageImportOptions(
+                        lock_bg=lock_bg_var.get(),
+                        lock_mc1=lock_mc1_var.get(),
+                        lock_mc2=lock_mc2_var.get(),
+                        mixed_mode=mixed_mode_var.get(),
+                        dither=dither_var.get(),
+                        chroma_weight=chroma_weight,
+                        dither_strength=dither_strength,
+                    )
+                    locks = options.locks_dict(current_colors)
+                    mixed_mode = options.mixed_mode
+                    dither = options.dither
+                    chroma_weight = options.chroma_weight
+                    dither_strength = options.dither_strength
+                else:
+                    locks = current_colors
+                    mixed_mode = False
+                    dither = False
+                    chroma_weight = chroma_weight
+                    dither_strength = dither_strength
+                result = convert_image(
+                    region,
+                    mode,
+                    strategy,
+                    locks,
+                    remap=fix_clash_var.get(),
+                    placement=placement,
+                    mixed_mode=mixed_mode,
+                    dither=dither,
+                    chroma_weight=chroma_weight,
+                    dither_strength=dither_strength,
+                )
 
                 result_img = self._render_convert_result(result, mode, target_w, target_h)
                 if result_img is None:
@@ -3185,6 +3360,7 @@ class CharsetApp:
                     "rows": target_h // 8,
                     "screen": result.screen_ram,
                     "color": result.color_ram,
+                    "cell_modes": result.cell_modes,
                     "bg": result.bg,
                     "mc1": result.mc1,
                     "mc2": result.mc2,
@@ -3223,6 +3399,11 @@ class CharsetApp:
                 result_fg_label.configure(text="FG: -")
                 result_remap_label.configure(text="Remap: -")
                 result_state["meta"] = None
+            finally:
+                result_state["busy"] = False
+                if result_state["needs"]:
+                    result_state["needs"] = False
+                    schedule_result_preview()
 
         def on_result_click(event):
             meta = result_state.get("meta")
@@ -3242,16 +3423,23 @@ class CharsetApp:
             screen = meta["screen"]
             if idx >= len(screen):
                 return
-            if meta["mode"] == "hires":
-                fg = (screen[idx] >> 4) & 0x0F
+            color = meta.get("color", [])
+            if idx >= len(color):
+                return
+            cell_modes = meta.get("cell_modes")
+            cell_mode = None
+            if isinstance(cell_modes, list) and idx < len(cell_modes):
+                cell_mode = cell_modes[idx]
+            if cell_mode == "hires" or meta["mode"] == "hires":
+                fg = color[idx] & 0x0F
             else:
-                fg = screen[idx] & 0x0F
+                fg = color[idx] & 0x07
             result_fg_label.configure(text=f"FG: {self._color_name_by_index(fg)}")
 
         result_canvas.bind("<Button-1>", on_result_click)
 
         def _hit_test(x, y, x0, y0, x1, y1):
-            handle = 6
+            handle = 12
             edges = {"left": abs(x - x0) <= handle,
                      "right": abs(x - x1) <= handle,
                      "top": abs(y - y0) <= handle,
@@ -3280,13 +3468,14 @@ class CharsetApp:
             sel["origin"] = (x_var.get(), y_var.get(), w_var.get(), h_var.get())
             selection_visible["active"] = True
             canvas.itemconfigure(rect, state="normal")
+            result_state["dragging"] = True
             if mode == "new":
                 x_img, y_img = sel["last"]
-                x_var.set(x_img)
-                y_var.set(y_img)
-                w_var.set(1)
-                h_var.set(1)
-                clamp_selection()
+                pending_selection["x"] = x_img
+                pending_selection["y"] = y_img
+                pending_selection["w"] = 1
+                pending_selection["h"] = 1
+                schedule_entry_sync()
 
         def on_drag(event):
             x_img, y_img = _event_to_image_coords(event)
@@ -3295,8 +3484,10 @@ class CharsetApp:
             if sel["mode"] == "move":
                 dx = x_img - start_x
                 dy = y_img - start_y
-                x_var.set(orig_x + dx)
-                y_var.set(orig_y + dy)
+                x0 = orig_x + dx
+                y0 = orig_y + dy
+                w0 = orig_w
+                h0 = orig_h
             elif sel["mode"] == "resize" and sel["edges"]:
                 x0 = orig_x
                 y0 = orig_y
@@ -3310,24 +3501,45 @@ class CharsetApp:
                     y0 = min(y_img, y1 - 1)
                 if sel["edges"].get("bottom"):
                     y1 = max(y_img, y0 + 1)
-                x_var.set(x0)
-                y_var.set(y0)
-                w_var.set(max(1, x1 - x0))
-                h_var.set(max(1, y1 - y0))
+                w0 = max(1, x1 - x0)
+                h0 = max(1, y1 - y0)
             else:
                 x0 = min(start_x, x_img)
                 y0 = min(start_y, y_img)
                 x1 = max(start_x, x_img)
                 y1 = max(start_y, y_img)
-                x_var.set(x0)
-                y_var.set(y0)
-                w_var.set(max(1, x1 - x0))
-                h_var.set(max(1, y1 - y0))
-            clamp_selection()
+                w0 = max(1, x1 - x0)
+                h0 = max(1, y1 - y0)
+
+            x0 = max(0, min(x0, image.width - 1))
+            y0 = max(0, min(y0, image.height - 1))
+            w0 = max(1, min(w0, image.width - x0))
+            h0 = max(1, min(h0, image.height - y0))
+
+            pending_selection["x"] = int(x0)
+            pending_selection["y"] = int(y0)
+            pending_selection["w"] = int(w0)
+            pending_selection["h"] = int(h0)
+            schedule_entry_sync()
+            s = display_scale["value"]
+            sx0 = display_offset["x"] + int(pending_selection["x"] * s)
+            sy0 = display_offset["y"] + int(pending_selection["y"] * s)
+            sx1 = display_offset["x"] + int((pending_selection["x"] + pending_selection["w"]) * s)
+            sy1 = display_offset["y"] + int((pending_selection["y"] + pending_selection["h"]) * s)
+            canvas.coords(rect, sx0, sy0, sx1, sy1)
 
         def on_release(_event):
             sel["mode"] = "new"
             sel["edges"] = None
+            result_state["dragging"] = False
+            if entry_state["after_id"]:
+                dialog.after_cancel(entry_state["after_id"])
+                entry_state["after_id"] = None
+            _run_entry_sync()
+            if result_state["pending"]:
+                result_state["pending"] = False
+                schedule_result_preview()
+            build_preview()
 
         canvas.bind("<Button-1>", on_press)
         canvas.bind("<B1-Motion>", on_drag)
@@ -3336,7 +3548,9 @@ class CharsetApp:
         def on_entry_change(*_args):
             selection_visible["active"] = True
             clamp_selection()
-            build_preview()
+            if result_state["dragging"]:
+                return
+            schedule_preview()
 
         x_var.trace_add("write", on_entry_change)
         y_var.trace_add("write", on_entry_change)
@@ -3359,12 +3573,19 @@ class CharsetApp:
                 chars_h_entry.configure(state="disabled")
                 tiles_w_entry.configure(state="normal")
                 tiles_h_entry.configure(state="normal")
-            build_preview()
+            schedule_result_preview_only()
 
         output_unit_var.trace_add("write", update_output_entry_state)
         preserve_var.trace_add("write", lambda *_: build_preview())
-        strategy_var.trace_add("write", lambda *_: build_preview())
-        fix_clash_var.trace_add("write", lambda *_: build_preview())
+        strategy_var.trace_add("write", lambda *_: schedule_result_preview_only())
+        fix_clash_var.trace_add("write", lambda *_: schedule_result_preview_only())
+        lock_bg_var.trace_add("write", lambda *_: schedule_result_preview_only())
+        lock_mc1_var.trace_add("write", lambda *_: schedule_result_preview_only())
+        lock_mc2_var.trace_add("write", lambda *_: schedule_result_preview_only())
+        mixed_mode_var.trace_add("write", lambda *_: schedule_result_preview_only())
+        dither_var.trace_add("write", lambda *_: schedule_result_preview_only())
+        chroma_weight_var.trace_add("write", lambda *_: schedule_result_preview_only())
+        dither_strength_var.trace_add("write", lambda *_: schedule_result_preview_only())
         def _log_output_change(label: str) -> None:
             if not output_override["updating"]:
                 output_override["active"] = True
@@ -3378,10 +3599,10 @@ class CharsetApp:
                 output_unit_var.get(),
             )
 
-        chars_w_var.trace_add("write", lambda *_: (_log_output_change("chars_w"), build_preview()))
-        chars_h_var.trace_add("write", lambda *_: (_log_output_change("chars_h"), build_preview()))
-        tiles_w_var.trace_add("write", lambda *_: (_log_output_change("tiles_w"), build_preview()))
-        tiles_h_var.trace_add("write", lambda *_: (_log_output_change("tiles_h"), build_preview()))
+        chars_w_var.trace_add("write", lambda *_: (_log_output_change("chars_w"), schedule_result_preview_only()))
+        chars_h_var.trace_add("write", lambda *_: (_log_output_change("chars_h"), schedule_result_preview_only()))
+        tiles_w_var.trace_add("write", lambda *_: (_log_output_change("tiles_w"), schedule_result_preview_only()))
+        tiles_h_var.trace_add("write", lambda *_: (_log_output_change("tiles_h"), schedule_result_preview_only()))
         update_output_entry_state()
 
         def _mark_output_override(_event=None):
@@ -3441,8 +3662,33 @@ class CharsetApp:
             parsed_chars_h = max(1, min(25, _safe_int(chars_h_var, 1)))
             parsed_tiles_w = max(1, min(20, _safe_int(tiles_w_var, 1)))
             parsed_tiles_h = max(1, min(12, _safe_int(tiles_h_var, 1)))
+            _apply_strategy_to_locks()
             strategy = strategy_values.get(strategy_var.get(), "auto")
-            locks = _current_lock_colors()
+            current_colors = _current_lock_colors()
+            chroma_weight = _safe_float(chroma_weight_var, 0.25)
+            dither_strength = _safe_float(dither_strength_var, 0.035)
+
+            if ImageImportOptions is not None:
+                options = ImageImportOptions(
+                    lock_bg=lock_bg_var.get(),
+                    lock_mc1=lock_mc1_var.get(),
+                    lock_mc2=lock_mc2_var.get(),
+                    mixed_mode=mixed_mode_var.get(),
+                    dither=dither_var.get(),
+                    chroma_weight=chroma_weight,
+                    dither_strength=dither_strength,
+                )
+                locks = options.locks_dict(current_colors)
+                mixed_mode = options.mixed_mode
+                dither = options.dither
+                chroma_weight = options.chroma_weight
+                dither_strength = options.dither_strength
+            else:
+                locks = current_colors
+                mixed_mode = False
+                dither = False
+                chroma_weight = chroma_weight
+                dither_strength = dither_strength
             dialog.destroy()
             self._import_image_region(
                 image,
@@ -3460,6 +3706,10 @@ class CharsetApp:
                 fix_clash_var.get(),
                 strategy,
                 locks,
+                mixed_mode,
+                dither,
+                chroma_weight,
+                dither_strength,
             )
 
         tk.Button(actions, text="Import", command=do_import).pack(side=tk.RIGHT, padx=(0, 8))
@@ -3484,9 +3734,13 @@ class CharsetApp:
         fix_clashes: bool,
         palette_strategy: str,
         palette_locks: dict,
+        mixed_mode: bool,
+        dither: bool,
+        chroma_weight: float,
+        dither_strength: float,
     ) -> None:
         self.logger.info(
-            "Image import params mode=%s selection=(%s,%s %sx%s) output=%s chars=%sx%s tiles=%sx%s aspect=%s strategy=%s locks=%s",
+            "Image import params mode=%s selection=(%s,%s %sx%s) output=%s chars=%sx%s tiles=%sx%s aspect=%s strategy=%s locks=%s mixed=%s dither=%s chroma=%s dither_strength=%s",
             mode,
             x,
             y,
@@ -3500,6 +3754,10 @@ class CharsetApp:
             preserve_aspect,
             palette_strategy,
             palette_locks,
+            mixed_mode,
+            dither,
+            chroma_weight,
+            dither_strength,
         )
         if not self.charset_bytes:
             if not messagebox.askyesno(
@@ -3576,7 +3834,18 @@ class CharsetApp:
 
         progress = self._show_working_modal("Importing image region...")
         try:
-            result = convert_image(region, mode, palette_strategy, palette_locks, remap=fix_clashes, placement=placement)
+            result = convert_image(
+                region,
+                mode,
+                palette_strategy,
+                palette_locks,
+                remap=fix_clashes,
+                placement=placement,
+                mixed_mode=mixed_mode,
+                dither=dither,
+                chroma_weight=chroma_weight,
+                dither_strength=dither_strength,
+            )
         except Exception as exc:
             if progress:
                 progress.destroy()
@@ -3649,27 +3918,26 @@ class CharsetApp:
 
         cols = target_w // cell_w
         rows = target_h // cell_h
-        chars_needed = cols * rows
+        unique_chars = result.unique_chars or (len(bitmap) // 8)
+        chars_needed = max(1, unique_chars)
         self._ensure_charset_capacity(chars_needed)
         if self.selected_index + chars_needed > self.total_chars:
             messagebox.showerror("Import failed", "Not enough space in charset for selection.")
             return
 
         self._record_undo()
-        for row in range(rows):
-            for col in range(cols):
-                char_index = row * cols + col
-                start = char_index * 8
-                end = start + 8
-                if end > len(bitmap):
-                    self.logger.warning(
-                        "Bitmap data shorter than expected (end=%s len=%s)",
-                        end,
-                        len(bitmap),
-                    )
-                    continue
-                dest = (self.selected_index + row * cols + col) * 8
-                self.charset_bytes[dest:dest + 8] = bytearray(bitmap[start:end])
+        for idx in range(chars_needed):
+            start = idx * 8
+            end = start + 8
+            if end > len(bitmap):
+                self.logger.warning(
+                    "Bitmap data shorter than expected (end=%s len=%s)",
+                    end,
+                    len(bitmap),
+                )
+                break
+            dest = (self.selected_index + idx) * 8
+            self.charset_bytes[dest:dest + 8] = bytearray(bitmap[start:end])
 
         created_tiles = []
         created_object = None
@@ -3679,16 +3947,21 @@ class CharsetApp:
                 for col in range(cols):
                     idx = row * cols + col
                     if mode == "hires":
-                        if idx < len(screen_ram):
-                            color = (screen_ram[idx] >> 4) & 0x0F
+                        if idx < len(color_ram):
+                            color = color_ram[idx] & 0x0F
                         else:
                             color = self._color_index_by_name(self.fg_var.get())
                     else:
-                        if idx < len(screen_ram):
-                            color = screen_ram[idx] & 0x0F
+                        if idx < len(color_ram):
+                            color = color_ram[idx] & 0x07
                         else:
                             color = self._color_index_by_name(self.fg_var.get())
                     per_char_colors.append(color)
+
+            def _cell_char_index(cell_idx: int) -> int:
+                if cell_idx < len(screen_ram):
+                    return self.selected_index + screen_ram[cell_idx]
+                return self.selected_index
 
             for ty in range(max(1, tiles_h)):
                 for tx in range(max(1, tiles_w)):
@@ -3708,7 +3981,7 @@ class CharsetApp:
                                 chars.append(self.selected_index)
                                 colors.append(self._color_index_by_name(self.fg_var.get()))
                             else:
-                                chars.append(self.selected_index + char_idx)
+                                chars.append(_cell_char_index(char_idx))
                                 colors.append(per_char_colors[char_idx])
                     tile = TileDef(
                         tid=tid,
@@ -3882,57 +4155,20 @@ class CharsetApp:
         return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
 
     def _render_convert_result(self, result: ConvertResult, mode: str, width: int, height: int) -> Image.Image | None:
-        if Image is None:
+        if Image is None or render_preview is None:
             return None
-        cols = width // 8
-        rows = height // 8
-        if mode == "hires":
-            img = Image.new("RGB", (width, height), self._hex_to_rgb(self._color_hex_by_index(result.bg)))
-            for cy in range(rows):
-                for cx in range(cols):
-                    idx = cy * cols + cx
-                    if idx >= len(result.screen_ram):
-                        continue
-                    fg = (result.screen_ram[idx] >> 4) & 0x0F
-                    bg = result.screen_ram[idx] & 0x0F
-                    fg_rgb = self._hex_to_rgb(self._color_hex_by_index(fg))
-                    bg_rgb = self._hex_to_rgb(self._color_hex_by_index(bg))
-                    base = idx * 8
-                    for y in range(8):
-                        if base + y >= len(result.charset):
-                            continue
-                        b = result.charset[base + y]
-                        for x in range(8):
-                            color = fg_rgb if (b >> (7 - x)) & 1 else bg_rgb
-                            img.putpixel((cx * 8 + x, cy * 8 + y), color)
-            return img
-
-        img = Image.new("RGB", (width, height), self._hex_to_rgb(self._color_hex_by_index(result.bg)))
-        for cy in range(rows):
-            for cx in range(cols):
-                idx = cy * cols + cx
-                if idx >= len(result.screen_ram):
-                    continue
-                fg = result.screen_ram[idx] & 0x0F
-                colors = [
-                    self._hex_to_rgb(self._color_hex_by_index(result.bg)),
-                    self._hex_to_rgb(self._color_hex_by_index(result.mc1)),
-                    self._hex_to_rgb(self._color_hex_by_index(result.mc2)),
-                    self._hex_to_rgb(self._color_hex_by_index(fg)),
-                ]
-                base = idx * 8
-                for y in range(8):
-                    if base + y >= len(result.charset):
-                        continue
-                    b = result.charset[base + y]
-                    for xmc in range(4):
-                        code = (b >> (6 - 2 * xmc)) & 0x03
-                        color = colors[code]
-                        px = cx * 8 + xmc * 2
-                        py = cy * 8 + y
-                        img.putpixel((px, py), color)
-                        img.putpixel((px + 1, py), color)
-        return img
+        return render_preview(
+            result.charset,
+            result.screen_ram,
+            result.color_ram,
+            result.bg,
+            result.mc1,
+            result.mc2,
+            result.mode,
+            width,
+            height,
+            cell_modes=result.cell_modes,
+        )
 
     def _render_c64img_result(self, converter, mode: str, width: int, height: int) -> Image.Image | None:
         if Image is None:
